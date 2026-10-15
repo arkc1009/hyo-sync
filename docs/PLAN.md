@@ -5,17 +5,20 @@
 
 ## 열린 질문 (결정 필요하면 여기에 적을 것)
 - [ ] 브라우저 피치 추출기: CREPE tiny(TF.js) vs pitchy(McLeod, 모델 없음) — Phase 0 스파이크에서 실제 녹음본으로 비교 후 결정. CREPE가 TF.js로 안정적으로 안 돌면 pitchy로 시작하고 `extractPitch()` 뒤에서 교체
+  - → **잠정: CREPE tiny 기본, pitchy 폴백.** TF.js 4.x에서 로딩·정확도 확인됨(`spike/README.md`). 합성 데이터로는 둘을 못 가르므로 실제 녹음본 3개 테스트 후 확정
 - [ ] 임계치 초기값(SPEC C-5의 25/50 cent, 60/120 ms)은 추정치. Phase 3에서 실제 팀 녹음본 5개 이상으로 "담당자가 귀로 잡은 구간"과 비교해 조정
 - [ ] 가이드가 파트당 여러 개일 때 비교 대상: 최신 1개 vs 담당자가 지정 — 일단 최신, 필요하면 Phase 4에서 지정 UI
 
 ---
 
 ## Phase 0 — 피치 추출 스파이크 (앱 없이, 단일 HTML)
-- [ ] `spike/pitch.html`: 파일 선택 → decodeAudioData → 16kHz 리샘플 → CREPE tiny(TF.js) → f0/confidence를 캔버스에 그림
-- [ ] 같은 페이지에서 pitchy도 돌려서 두 곡선 겹쳐 보기
-- [ ] 실제 녹음본 3개(인터페이스 녹음, 폰 녹음, 화음 파트)로 옥타브 에러·무성 구간 판정 눈으로 확인
-- [ ] 데스크톱/모바일(폰 크롬)에서 4분 곡 처리 시간 측정
-- [ ] 열린 질문 1번 결정 → 여기에 기록
+- [x] `spike/pitch.html`: 파일 선택 → decodeAudioData → 16kHz 리샘플 → CREPE tiny(TF.js) → f0/confidence를 캔버스에 그림
+- [x] 같은 페이지에서 pitchy도 돌려서 두 곡선 겹쳐 보기
+- [x] 합성 보컬 + 정답으로 수치 검증 (`spike/gen-test-wav.mjs`, `spike/run-headless.mjs`): RPA 99%, 옥타브 에러 0, 중앙 오차 2~3¢
+- [x] CPU-only(wasm threaded) 4분 곡 처리 시간: CREPE 96초, pitchy 5.5초
+- [ ] 실제 녹음본 3개(인터페이스 녹음, 폰 녹음, 화음 파트)로 옥타브 에러·무성 구간 판정 눈으로 확인 — **사용자가 `pnpm serve`로 직접**
+- [ ] 데스크톱(GPU webgl)/모바일(폰 크롬)에서 4분 곡 처리 시간 측정 — 사용자 기기에서
+- [ ] 열린 질문 1번 확정 (잠정 결정은 기록됨)
 
 **완료 기준**: 폰 녹음본에서도 옥타브 튐 없이 f0 곡선이 나오고, 모바일에서 4분 곡 2분 이내 처리
 
