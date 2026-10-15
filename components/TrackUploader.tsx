@@ -6,12 +6,14 @@ import type { ExtractProgress } from "@/lib/pitch";
 
 interface Props {
   parts: { id: string; name: string }[];
+  /** guide = 담당자 가이드, submission = 멤버 녹음본 */
+  kind: "guide" | "submission";
 }
 
 type Status =
   | { kind: "idle" }
-  | { kind: "extract"; progress: ExtractProgress }
-  | { kind: "upload" }
+  | { kind: "extract"; progress: ExtractProgress; backend?: string }
+  | { kind: "upload"; pct: number }
   | { kind: "save" }
   | { kind: "done" }
   | { kind: "error"; message: string };
@@ -22,8 +24,11 @@ const STAGE_LABEL: Record<ExtractProgress["stage"], string> = {
   pitch: "피치 추출",
 };
 
-/** 파트 선택 → 브라우저 피치 추출 → Blob 업로드 → /api/guides */
-export default function GuideUploader({ parts }: Props) {
+const ENDPOINT = { guide: "/api/guides", submission: "/api/submissions" } as const;
+const BUTTON = { guide: "가이드 업로드", submission: "녹음본 제출" } as const;
+
+/** 파트 선택 → 브라우저 피치 추출 → Blob 업로드 → API 저장 */
+export default function TrackUploader({ parts, kind }: Props) {
   const router = useRouter();
   const [partId, setPartId] = useState(parts[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
@@ -32,29 +37,35 @@ export default function GuideUploader({ parts }: Props) {
 
   async function run() {
     if (!file || !partId) return;
+    const t0 = performance.now();
     try {
       const { extractPitch } = await import("@/lib/pitch");
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
+      const extractMs = performance.now() - t0;
 
-      setStatus({ kind: "upload" });
+      setStatus({ kind: "upload", pct: 0 });
       const { upload } = await import("@vercel/blob/client");
-      const blob = await upload(`guides/${partId}/${file.name}`, file, {
+      const blob = await upload(`${kind}s/${partId}/${file.name}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
-        clientPayload: JSON.stringify({ kind: "guide", partId }),
+        clientPayload: JSON.stringify({ kind, partId }),
+        multipart: true, // 큰 wav 를 병렬 청크로
+        onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
       });
 
       setStatus({ kind: "save" });
-      const res = await fetch("/api/guides", {
+      const res = await fetch(ENDPOINT[kind], {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track }),
+        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track, extractMs: Math.round(extractMs) }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error);
+      const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
 
       setStatus({ kind: "done" });
       setFile(null);
-      router.refresh();
+      if (kind === "submission" && json.id) router.push(`/submissions/${json.id}`);
+      else router.refresh();
     } catch (e) {
       setStatus({ kind: "error", message: (e as Error).message });
     }
@@ -72,7 +83,7 @@ export default function GuideUploader({ parts }: Props) {
       </label>
       <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       <button type="button" onClick={run} disabled={busy || !file || !partId}>
-        가이드 업로드
+        {BUTTON[kind]}
       </button>
       <StatusLine status={status} />
     </div>
@@ -86,8 +97,8 @@ function StatusLine({ status }: { status: Status }) {
       const { stage, value } = status.progress;
       return <small>{STAGE_LABEL[stage]}{stage === "pitch" ? ` ${Math.round(value * 100)}%` : "…"}</small>;
     }
-    case "upload": return <small>업로드 중…</small>;
-    case "save": return <small>저장 중…</small>;
+    case "upload": return <small>업로드 중… {Math.round(status.pct)}%</small>;
+    case "save": return <small>저장·분석 중…</small>;
     case "done": return <small>완료</small>;
     case "error": return <small style={{ color: "crimson" }}>에러: {status.message}</small>;
   }
