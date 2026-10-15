@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>hyo sync — pitch spike</title>
+<style>
+  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; max-width: 1100px; margin-inline: auto; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  button { padding: 6px 12px; }
+  #status { font-family: ui-monospace, monospace; white-space: pre-wrap; font-size: 13px; }
+  canvas { width: 100%; height: 360px; border: 1px solid #8884; display: block; }
+  table { border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  td, th { border: 1px solid #8884; padding: 4px 8px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .legend span { display: inline-block; width: 12px; height: 12px; vertical-align: middle; margin-right: 4px; }
+</style>
+</head>
+<body>
+<h1>hyo sync — Phase 0 피치 추출 스파이크</h1>
+<div class="row">
+  <input id="file" type="file" accept="audio/*" />
+  <input id="truth" type="file" accept="application/json" title="(선택) 정답 PitchTrack JSON" />
+  <label><input id="useCrepe" type="checkbox" checked /> CREPE tiny</label>
+  <label><input id="usePitchy" type="checkbox" checked /> pitchy</label>
+  <button id="run" disabled>분석</button>
+  <button id="download" disabled>PitchTrack JSON 저장</button>
+</div>
+<div class="row legend">
+  <span style="background:#2b7fff"></span>CREPE
+  <span style="background:#ff8c2b"></span>pitchy
+  <span style="background:#999"></span>정답(있을 때)
+  <small>· 세로축 MIDI 노트, 가로축 초. confidence &lt; 0.5 구간은 안 그림</small>
+</div>
+<canvas id="plot" width="2200" height="720"></canvas>
+<div id="status">tf.js / 모델 로딩 중…</div>
+<table id="stats"></table>
+
+<script src="vendor/tf.min.js"></script>
+<script src="vendor/tf-backend-wasm.min.js"></script>
+<script src="vendor/pitchy.js"></script>
+<script src="pitch.js"></script>
+</body>
+</html>
