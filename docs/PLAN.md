@@ -1,6 +1,6 @@
 # PLAN — 개발 단계
 
-> **현재 Phase: 2 완료 → 3**
+> **현재 Phase: 3** (코드 완료, 실제 녹음본으로 임계치 조정 남음)
 > 각 Phase는 독립적으로 동작 확인이 가능해야 한다. 완료 기준을 통과하면 체크하고 다음으로.
 
 ## 열린 질문 (결정 필요하면 여기에 적을 것)
@@ -51,18 +51,19 @@
   - 모델은 `/public/models/crepe-tiny/`, wasm 바이너리는 `/public/tfjs-wasm/`. COOP/COEP 는 걸지 않음(Blob 오디오·아바타 같은 교차 출처 리소스를 막아서). wasm 은 단일 스레드 폴백
 - [x] 가이드 업로드: 파트 선택 → 브라우저 피치 추출(진행률) → Blob client upload(`/api/blob/upload`) → `POST /api/guides` (PitchTrack 검증 `lib/analysis/validate.ts`)
 - [x] 가이드 재생 (`<audio>` Blob URL)
-- [ ] 로컬 실동작 확인 — `.env` 에 GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_SECRET, BLOB_READ_WRITE_TOKEN, DATABASE_URL 넣고 `docker compose up -d && pnpm prisma migrate dev && pnpm dev`
+- [x] 실동작 확인 — Vercel(Neon + Blob) 에 배포해서 로그인 → 프로젝트 → 파트 → 가이드 업로드까지 확인
 
 **완료 기준**: 로그인 → 프로젝트 생성 → 파트 2개 → 각 파트에 가이드 업로드 → GuideTrack 행에 pitch jsonb 채워짐
 
 ---
 
 ## Phase 3 — 제출 + 리포트
-- [ ] `/projects/[id]/submit`: 파트 선택 → 파일 선택 → 추출 → 업로드 → `POST /api/submissions` → 서버에서 `compare()` 실행 → Report 저장
-- [ ] `/submissions/[id]`: 소절 타임라인(verdict 색상), 소절별 표, 상단 요약 + 전역 오프셋 첨언
-- [ ] 소절 클릭 → 가이드/녹음본 해당 구간 A/B 재생
-- [ ] 멤버 뷰: 내 제출 목록(테이크별)
-- [ ] 실제 팀 녹음본 5개로 임계치 조정 (열린 질문 2번)
+- [x] `/projects/[id]/submit`: 파트 선택(가이드 있는 파트만) → 파일 → 추출 → Blob 업로드(multipart) → `POST /api/submissions` → 서버에서 `compare()` → Report 저장 → 리포트로 이동
+- [x] `/submissions/[id]`: 요약(재녹음/보정/OK/불가), 전역 오프셋 첨언, 소절 타임라인(verdict 색), 소절별 표
+- [x] 소절 클릭 → 가이드/녹음본 해당 구간 재생 (`components/ReportView.tsx`, 앞뒤 150ms 여유)
+- [x] 프로젝트 페이지: 파트별 제출 목록(멤버·테이크·요약 배지), 제출 버튼
+- [x] `GuideUploader` → `TrackUploader(kind)` 로 통합, 업로드 진행률 표시
+- [ ] 실제 팀 녹음본 5개로 임계치 조정 (열린 질문 2번) — 사용자가 리포트 보면서 "귀로 잡은 구간"과 비교
 
 **완료 기준**: 멤버가 녹음본 올리고 1분 안에 리포트 봄. 담당자가 귀로 잡았던 "나간 구간"이 RERECORD/FIXABLE로 잡히고, 멀쩡한 구간이 RERECORD로 뜨는 거짓 양성이 소절 기준 10% 미만
 
