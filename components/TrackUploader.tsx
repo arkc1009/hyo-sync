@@ -24,6 +24,7 @@ const STAGE_LABEL: Record<ExtractProgress["stage"], string> = {
   pitch: "피치 추출",
 };
 
+const MULTIPART_MIN_BYTES = 100 * 1024 * 1024;
 const ENDPOINT = { guide: "/api/guides", submission: "/api/submissions" } as const;
 const BUTTON = { guide: "가이드 업로드", submission: "녹음본 제출" } as const;
 
@@ -50,7 +51,9 @@ export default function TrackUploader({ parts, kind }: Props) {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({ kind, partId }),
-        multipart: true, // 큰 wav 를 병렬 청크로
+        // 멀티파트 생성(mpu)이 이 스토어에서 400 을 내고 클라이언트가 10회 재시도하느라 0% 에 멈춤 (PLAN 열린 질문 참고).
+        // 단일 PUT 은 확인됐으므로 100MB 미만은 단일 PUT, 그 이상만 멀티파트
+        multipart: file.size >= MULTIPART_MIN_BYTES,
         onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
       });
 
