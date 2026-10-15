@@ -16,6 +16,13 @@ pnpm serve            # http://localhost:8080/pitch.html 을 브라우저에서 
 브라우저에서 직접 열 때: 파일 고르고 "분석". 정답 JSON은 선택. 결과 JSON 저장 가능.
 `?backend=wasm` / `?backend=cpu` 로 백엔드 강제.
 
+### Vercel에 올리기 (폰 테스트용)
+정적 파일뿐이라 빌드 없이 그대로 올라간다. `vercel.json`이 wasm 스레드용 COOP/COEP 헤더를 건다.
+```sh
+cd spike && npx vercel --prod      # 또는 Vercel 대시보드에서 Root Directory = spike, Framework = Other
+```
+`.vercelignore`가 node_modules / testdata / 스크립트를 제외한다. 올라가는 건 html·js·vendor·model ≈ 5MB.
+
 ## 구성
 - `pitch.html` / `pitch.js` — 디코딩(`decodeAudioData` → 16kHz 모노) → CREPE tiny / pitchy → PitchTrack(SPEC 형식) → 캔버스·표
 - `vendor/` — tf.js 4.22.0, tf wasm 백엔드, pitchy 4.1.0 (esbuild IIFE 번들)
