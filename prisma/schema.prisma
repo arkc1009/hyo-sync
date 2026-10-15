@@ -1,0 +1,117 @@
+// 데이터 모델: docs/SPEC.md "데이터 모델" 참고
+// 스키마 변경 후: pnpm prisma generate → pnpm prisma migrate dev
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SubmissionStatus {
+  UPLOADED
+  ANALYZED
+  FAILED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+
+  ownedProjects Project[]
+  memberships   ProjectMember[]
+  guideTracks   GuideTrack[]
+  submissions   Submission[]
+}
+
+model Project {
+  id         String   @id @default(cuid())
+  title      String
+  ownerId    String
+  inviteCode String   @unique @default(cuid())
+  createdAt  DateTime @default(now())
+
+  owner   User            @relation(fields: [ownerId], references: [id])
+  members ProjectMember[]
+  parts   Part[]
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  joinedAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+}
+
+/// 파트 = 멜로디, 화음1, … 파트마다 가이드가 따로 있다 (SPEC 가정 2)
+model Part {
+  id        String @id @default(cuid())
+  projectId String
+  name      String
+  order     Int    @default(0)
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  guideTracks GuideTrack[]
+  submissions Submission[]
+
+  @@unique([projectId, order])
+}
+
+/// pitch: 브라우저에서 추출한 PitchTrack (lib/analysis/types.ts)
+model GuideTrack {
+  id           String   @id @default(cuid())
+  partId       String
+  blobUrl      String
+  durationMs   Int
+  sampleRate   Int      @default(16000)
+  pitch        Json
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  part       Part     @relation(fields: [partId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+  reports    Report[]
+}
+
+model Submission {
+  id         String           @id @default(cuid())
+  partId     String
+  userId     String
+  blobUrl    String
+  durationMs Int
+  take       Int              @default(1)
+  pitch      Json
+  status     SubmissionStatus @default(UPLOADED)
+  createdAt  DateTime         @default(now())
+
+  part   Part    @relation(fields: [partId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id])
+  report Report?
+
+  @@index([partId, userId])
+}
+
+/// compare() 결과. 임계치 버전이 바뀌면 재계산해서 덮어쓴다
+model Report {
+  id                String   @id @default(cuid())
+  submissionId      String   @unique
+  guideTrackId      String
+  thresholdsVersion Int
+  globalOffsetMs    Int
+  summary           Json
+  phrases           Json
+  createdAt         DateTime @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  guideTrack GuideTrack @relation(fields: [guideTrackId], references: [id])
+}

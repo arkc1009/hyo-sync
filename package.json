@@ -1,0 +1,32 @@
+{
+  "name": "hyo-sync",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "next": "16.4.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.1",
+    "prisma": "7.10.0",
+    "typescript": "^5",
+    "vitest": "5.0.4"
+  },
+  "packageManager": "pnpm@10.28.0"
+}
