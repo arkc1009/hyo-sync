@@ -45,7 +45,8 @@ export default function TrackUploader({ parts, kind }: Props) {
 
       setStatus({ kind: "upload", pct: 0 });
       const { upload } = await import("@vercel/blob/client");
-      const blob = await upload(`${kind}s/${partId}/${file.name}`, file, {
+      // Blob 경로는 ASCII 만. 한글·공백 파일명은 멀티파트 생성(mpu)에서 400 이 난다
+      const blob = await upload(`${kind}s/${partId}/${Date.now()}.${safeExt(file.name)}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({ kind, partId }),
@@ -88,6 +89,12 @@ export default function TrackUploader({ parts, kind }: Props) {
       <StatusLine status={status} />
     </div>
   );
+}
+
+/** "효이 듀엣.WAV" → "wav". 확장자가 없거나 이상하면 "bin" */
+function safeExt(name: string) {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(name);
+  return m ? m[1].toLowerCase() : "bin";
 }
 
 function StatusLine({ status }: { status: Status }) {
