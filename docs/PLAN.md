@@ -1,6 +1,6 @@
 # PLAN — 개발 단계
 
-> **현재 Phase: 1 완료 → 2 대기** (Phase 0 의 실제 녹음본 테스트는 사용자 진행 중)
+> **현재 Phase: 2 완료 → 3**
 > 각 Phase는 독립적으로 동작 확인이 가능해야 한다. 완료 기준을 통과하면 체크하고 다음으로.
 
 ## 열린 질문 (결정 필요하면 여기에 적을 것)
@@ -44,12 +44,14 @@
 ---
 
 ## Phase 2 — 인증 + 프로젝트/파트/가이드
-- [ ] NextAuth(Google) 로그인
-- [ ] `/projects`: 내 프로젝트 목록, 생성
-- [ ] `/projects/[id]`: 파트 추가/정렬, 초대 링크(`/join/[inviteCode]`)
-- [ ] `/lib/pitch/extract.ts`: Phase 0 결과를 모듈화. `extractPitch(file, onProgress) → PitchTrack` (브라우저 전용, `'use client'`)
-- [ ] 가이드 업로드: 파트 선택 → 브라우저 피치 추출(진행률) → Blob client upload → `POST /api/guides` (PitchTrack)
-- [ ] 가이드 재생 확인
+- [x] NextAuth v5(Google) 로그인 — 어댑터 없이 JWT 세션, 로그인 시 `User` upsert (`lib/auth.ts`)
+- [x] `/projects`: 내 프로젝트 목록, 생성
+- [x] `/projects/[id]`: 파트 추가/삭제, 초대 링크(`/join/[inviteCode]`), 멤버 목록
+- [x] `/lib/pitch/extract.ts`: Phase 0 결과를 모듈화. `extractPitch(file, onProgress) → { track, durationMs }` (브라우저 전용, tf.js dynamic import, 백엔드 webgl → wasm → cpu)
+  - 모델은 `/public/models/crepe-tiny/`, wasm 바이너리는 `/public/tfjs-wasm/`. COOP/COEP 는 걸지 않음(Blob 오디오·아바타 같은 교차 출처 리소스를 막아서). wasm 은 단일 스레드 폴백
+- [x] 가이드 업로드: 파트 선택 → 브라우저 피치 추출(진행률) → Blob client upload(`/api/blob/upload`) → `POST /api/guides` (PitchTrack 검증 `lib/analysis/validate.ts`)
+- [x] 가이드 재생 (`<audio>` Blob URL)
+- [ ] 로컬 실동작 확인 — `.env` 에 GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_SECRET, BLOB_READ_WRITE_TOKEN, DATABASE_URL 넣고 `docker compose up -d && pnpm prisma migrate dev && pnpm dev`
 
 **완료 기준**: 로그인 → 프로젝트 생성 → 파트 2개 → 각 파트에 가이드 업로드 → GuideTrack 행에 pitch jsonb 채워짐
 
