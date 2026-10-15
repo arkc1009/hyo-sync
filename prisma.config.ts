@@ -10,6 +10,11 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // migrate 는 advisory lock 을 잡아야 해서 커넥션 풀러(pgbouncer)를 거치면 P1002 타임아웃이 난다.
+    // Neon 연동이 주는 직접 연결 주소를 우선 쓴다. 앱 런타임(lib/db.ts)은 풀러 주소(DATABASE_URL) 그대로
+    url:
+      process.env["DATABASE_URL_UNPOOLED"] ??
+      process.env["POSTGRES_URL_NON_POOLING"] ??
+      process.env["DATABASE_URL"],
   },
 });
