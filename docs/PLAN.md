@@ -1,6 +1,6 @@
 # PLAN — 개발 단계
 
-> **현재 Phase: 0**
+> **현재 Phase: 1 완료 → 2 대기** (Phase 0 의 실제 녹음본 테스트는 사용자 진행 중)
 > 각 Phase는 독립적으로 동작 확인이 가능해야 한다. 완료 기준을 통과하면 체크하고 다음으로.
 
 ## 열린 질문 (결정 필요하면 여기에 적을 것)
@@ -28,15 +28,16 @@
 ---
 
 ## Phase 1 — 뼈대 + 순수 분석 라이브러리
-- [ ] Next.js + TypeScript strict + pnpm 초기화, vitest 설정
-- [ ] Prisma 설치, SPEC 데이터 모델로 schema.prisma, 첫 마이그레이션 (로컬 Postgres는 `docker-compose.yml`)
-- [ ] `/lib/analysis/types.ts`: `PitchTrack`, `PhraseResult`, `ReportSummary`
-- [ ] `/lib/analysis/thresholds.ts`: 임계치 상수 + `THRESHOLDS_VERSION`
-- [ ] `/lib/analysis/phrases.ts`: 가이드 PitchTrack → 소절 분할
-- [ ] `/lib/analysis/dtw.ts`: 밴드 제한 DTW, 워핑 경로 반환
-- [ ] `/lib/analysis/compare.ts`: `compare(guide, submission) → Report` (phrases + summary + globalOffset)
-- [ ] 테스트: 합성 PitchTrack으로 (a) 동일 입력 → 전부 OK, (b) 한 소절 +60cent → 그 소절만 RERECORD/PITCH_SHARP, (c) 전체 +100ms 시프트 → globalOffsetMs ≈ 100, (d) 한 소절 무성 → UNRELIABLE
-- [ ] `.env.example` (DATABASE_URL, GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_SECRET, BLOB_READ_WRITE_TOKEN)
+- [x] Next.js + TypeScript strict + pnpm 초기화, vitest 설정
+- [x] Prisma 설치, SPEC 데이터 모델로 schema.prisma, 첫 마이그레이션 (로컬 Postgres는 `docker-compose.yml`)
+  - 마이그레이션 SQL은 DB 없이 `prisma migrate diff --from-empty --script` 로 생성. 로컬에서 `pnpm prisma migrate dev` 하면 그대로 적용됨
+- [x] `/lib/analysis/types.ts`: `PitchTrack`, `PhraseResult`, `ReportSummary`
+- [x] `/lib/analysis/thresholds.ts`: 임계치 상수 + `THRESHOLDS_VERSION`
+- [x] `/lib/analysis/phrases.ts`: 가이드 PitchTrack → 소절 분할
+- [x] `/lib/analysis/dtw.ts`: 밴드 제한 DTW, 워핑 경로 반환
+- [x] `/lib/analysis/compare.ts`: `compare(guide, submission) → Report` (phrases + summary + globalOffset)
+- [x] 테스트: 합성 PitchTrack으로 (a) 동일 입력 → 전부 OK, (b) 한 소절 +60cent → 그 소절만 RERECORD/PITCH_SHARP, (c) 전체 +100ms 시프트 → globalOffsetMs ≈ 100, (d) 한 소절 무성 → UNRELIABLE — 18개, 4분 길이 입력 1초 이내 포함
+- [x] `.env.example` (DATABASE_URL, GOOGLE_CLIENT_ID/SECRET, NEXTAUTH_SECRET, BLOB_READ_WRITE_TOKEN)
 
 **완료 기준**: `pnpm typecheck && pnpm test` 통과. 분석 라이브러리는 브라우저·DB 없이 순수 함수로 테스트됨
 
