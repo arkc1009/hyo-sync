@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Mixer, { type MixChannel } from "@/components/Mixer";
 import ReportView from "@/components/ReportView";
+import { submissionWhereForUser } from "@/lib/access";
 import { THRESHOLDS } from "@/lib/analysis/thresholds";
 import type { PhraseResult, ReportSummary } from "@/lib/analysis/types";
 import { audioSrc } from "@/lib/blob";
@@ -13,16 +15,25 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
   const user = await requireUser();
 
   const sub = await prisma.submission.findFirst({
-    where: { id, part: { project: { OR: [{ ownerId: user.id }, { members: { some: { userId: user.id } } }] } } },
+    where: submissionWhereForUser(id, user.id),
     include: {
       user: { select: { name: true, email: true } },
-      part: { include: { project: { select: { id: true, title: true } } } },
+      part: { include: { project: { select: { id: true, title: true, ownerId: true } } } },
+      comments: { orderBy: { startMs: "asc" }, select: { id: true, submissionId: true, startMs: true, endMs: true, body: true, createdAt: true } },
       report: { include: { guideTrack: { select: { blobUrl: true, durationMs: true, createdAt: true } } } },
     },
   });
   if (!sub) notFound();
 
   const who = sub.userId === user.id ? "내" : (sub.user.name ?? sub.user.email);
+  const isOwner = sub.part.project.ownerId === user.id;
+  const mixOnly = sub.status === "MIX_ONLY";
+  const inst = await prisma.instrumental.findFirst({ where: { projectId: sub.part.project.id }, orderBy: { createdAt: "desc" } });
+  const channels: MixChannel[] = [
+    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), durationMs: inst.durationMs }] : []),
+    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: audioSrc(sub.blobUrl), durationMs: sub.durationMs, submissionId: sub.id },
+  ];
+  const comments = sub.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
 
   return (
     <main>
@@ -32,21 +43,34 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
         <small>{formatMs(sub.durationMs)} · {sub.createdAt.toLocaleString("ko-KR")}</small>
       </p>
 
-      {sub.status === "FAILED" || !sub.report ? (
-        <p style={{ color: "crimson" }}>분석에 실패했어요. 다시 제출해 보세요.</p>
-      ) : (
-        <Report
-          summary={sub.report.summary as unknown as ReportSummary}
-          phrases={sub.report.phrases as unknown as PhraseResult[]}
-          globalOffsetMs={sub.report.globalOffsetMs}
-          guideUrl={audioSrc(sub.report.guideTrack.blobUrl)}
-          guideDurationMs={sub.report.guideTrack.durationMs}
-          subUrl={audioSrc(sub.blobUrl)}
-        />
+      {(mixOnly || comments.length > 0 || isOwner) && (
+        <section style={{ margin: "16px 0 24px" }}>
+          <h2>담당자 피드백</h2>
+          {mixOnly && <p><small>가이드 비교 없이 믹서·피드백용으로 올린 트랙이에요.</small></p>}
+          <Mixer channels={channels} comments={comments} canComment={isOwner} />
+        </section>
+      )}
+
+      {!mixOnly && (
+        <>
+          <h2>자동 분석 리포트</h2>
+          {sub.status === "FAILED" || !sub.report ? (
+            <p style={{ color: "crimson" }}>분석에 실패했어요. 다시 제출해 보세요.</p>
+          ) : (
+            <Report
+              summary={sub.report.summary as unknown as ReportSummary}
+              phrases={sub.report.phrases as unknown as PhraseResult[]}
+              globalOffsetMs={sub.report.globalOffsetMs}
+              guideUrl={audioSrc(sub.report.guideTrack.blobUrl)}
+              guideDurationMs={sub.report.guideTrack.durationMs}
+              subUrl={audioSrc(sub.blobUrl)}
+            />
+          )}
+        </>
       )}
 
       <p style={{ marginTop: 24 }}>
-        <Link href={`/projects/${sub.part.project.id}/submit`}>다시 제출</Link>
+        <Link href={`/projects/${sub.part.project.id}/${mixOnly ? "mix" : "submit"}`}>다시 올리기</Link>
       </p>
     </main>
   );

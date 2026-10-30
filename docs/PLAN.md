@@ -14,6 +14,9 @@
   - 2차 원인 (2026-10-30): 같은 파일·토큰으로 curl 은 200 인데 브라우저만 실패. `onUploadProgress` 를 주면 최신 Chrome 에서 SDK 가 스트리밍 fetch(duplex half) 로 올리고, 이건 HTTP/2 전용이라 백신 등이 HTTPS 를 가로채 HTTP/1.1 이 되는 환경에선 실패한다 (curl 의 CRYPT_E_NO_REVOCATION_CHECK 로 가로채기 정황). 진행률(%) 표시를 빼고 일반 업로드로
 - [ ] 가이드가 파트당 여러 개일 때 비교 대상: 최신 1개 vs 담당자가 지정 — 일단 최신, 필요하면 Phase 4에서 지정 UI
 
+- [x] 믹서용 트랙에 가이드가 필요한지 → **불필요.** 가이드 비교 없이 바로 올리는 `MIX_ONLY` 제출(pitch 없음)을 따로 둔다
+- [x] 멤버가 다른 멤버 녹음본·코멘트를 보는지 → **담당자가 프로젝트별로 설정** (`Project.visibility`: TEAM 기본 / OWN_ONLY). 기존 리포트 열람에도 같이 적용
+
 ---
 
 ## Phase 0 — 피치 추출 스파이크 (앱 없이, 단일 HTML)
@@ -85,6 +88,18 @@
 **완료 기준**: 실제 팀 1곡 작업을 이 서비스로 끝까지 진행
 
 ---
+
+## 확장 A — 웹 믹서 + 구간 코멘트
+DAW 없이 INST + 멤버 녹음본을 웹에서 같이 듣고, 담당자가 구간을 찍어 피드백을 남기면 멤버가 자기 제출 페이지에서 본다. 싱크는 멤버가 맞춰 올렸다고 가정(가정 1), EQ·패닝은 범위 밖
+- [x] 스키마: `Instrumental`(프로젝트당 여러 개, 최신 1개 사용), `TrackComment`(submissionId, startMs, endMs, body)
+- [x] INST 업로드 (담당자만, 피치 추출 없음): Blob client upload `kind: "inst"` → `POST /api/instrumentals`
+- [x] `/projects/[id]/mix`: INST + 파트·멤버별 최신 테이크 동시 재생, 채널별 볼륨/뮤트/솔로, 타임라인 클릭=이동·드래그=구간
+  - 가장 긴 채널을 기준 시계로 두고 50ms 넘게 벌어진 채널을 다시 맞춤 (`lib/mix`). 볼륨은 `HTMLMediaElement.volume` — iOS 는 볼륨 무시(뮤트·솔로만)
+- [x] 구간 코멘트 작성·삭제 (담당자만) `POST /api/submissions/[id]/comments`, `DELETE /api/comments/[id]`
+- [x] 믹스용 트랙 업로드 (가이드·피치 추출 없음): 믹서 페이지에서 파트 선택 → Blob → `POST /api/submissions { mixOnly: true }` → `status: MIX_ONLY`
+- [x] 열람 범위 옵션: 담당자가 프로젝트 페이지에서 TEAM / OWN_ONLY 선택. OWN_ONLY 면 멤버는 프로젝트 목록·믹서·제출 페이지에서 본인 것만 (`lib/access.ts`)
+- [x] 멤버: `/submissions/[id]` 상단에 INST + 내 녹음 믹서와 코멘트 목록, 클릭하면 1초 앞부터 구간 재생. 프로젝트 페이지 제출 목록에 코멘트 수
+- [ ] 실제 곡으로 동시 재생 싱크(체감 어긋남) 확인 — 특히 큰 wav 여러 개를 동시에 버퍼링할 때
 
 ## 이후 백로그
 - 서버 측 피치 추출(RMVPE on Modal) — `extractPitch()` 교체, 노이즈 많은 녹음 대응

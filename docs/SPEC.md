@@ -35,6 +35,8 @@ Submission    id, partId, userId, blobUrl, durationMs, take(int),
 Report        id, submissionId(unique), guideTrackId, thresholdsVersion,
               globalOffsetMs, summary(jsonb: ReportSummary),
               phrases(jsonb: PhraseResult[]), createdAt
+Instrumental  id, projectId, blobUrl, durationMs, uploadedById, createdAt   (확장 A: 믹서용 반주, 최신 1개 사용)
+TrackComment  id, submissionId, authorId, startMs, endMs, body, createdAt   (확장 A: 담당자 구간 피드백)
 ```
 
 `PitchTrack` (브라우저에서 추출, 그대로 저장):
