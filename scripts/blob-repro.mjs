@@ -52,6 +52,10 @@ async function clientToken(pathname) {
     maximumSizeInBytes: 200 * 1024 * 1024,
     addRandomSuffix: true,
     validUntil: Date.now() + 60 * 60 * 1000,
+    // REPRO_CALLBACK_URL 을 주면 handleUpload(onUploadCompleted) 가 만드는 토큰처럼 callbackUrl 을 싣는다
+    ...(process.env.REPRO_CALLBACK_URL
+      ? { onUploadCompleted: { callbackUrl: process.env.REPRO_CALLBACK_URL, tokenPayload: "{}" } }
+      : {}),
   });
 }
 
