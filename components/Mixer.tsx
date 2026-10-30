@@ -37,7 +37,7 @@ const COMMENT_COLOR = "#6e56cf";
 
 /**
  * INST + 녹음본 동시 재생. 채널마다 <audio> 하나, 가장 긴 채널을 기준 시계로 두고 나머지를 맞춘다.
- * 볼륨은 HTMLMediaElement.volume (Web Audio 는 Blob 오디오에 CORS 가 필요해서 쓰지 않음. iOS 는 볼륨 무시, 뮤트·솔로만 동작)
+ * 볼륨은 HTMLMediaElement.volume (iOS 는 볼륨 무시, 뮤트·솔로만 동작). url 은 audioSrc() 프록시 경로
  */
 export default function Mixer({ channels, comments: initialComments, canComment }: Props) {
   const els = useRef<(HTMLAudioElement | null)[]>([]);

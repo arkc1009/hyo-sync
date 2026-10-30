@@ -31,8 +31,12 @@ export function visibleSubmissionsWhere(project: { ownerId: string; visibility: 
 
 /** 제출 id 로 찾을 때의 조건: 담당자, TEAM 공개 프로젝트의 멤버, 또는 본인 녹음본 */
 export function submissionWhereForUser(id: string, userId: string) {
+  return { id, ...submissionVisibleTo(userId) };
+}
+
+/** 프로젝트를 모를 때(제출 id·blobUrl 로 찾을 때) 쓰는 열람 조건. visibleSubmissionsWhere 와 같은 규칙 */
+export function submissionVisibleTo(userId: string) {
   return {
-    id,
     part: {
       project: {
         OR: [{ ownerId: userId }, { members: { some: { userId } } }],

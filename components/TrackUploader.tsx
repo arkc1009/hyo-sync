@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BLOB_ACCESS } from "@/lib/blob";
 import type { ExtractProgress } from "@/lib/pitch";
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 type Status =
   | { kind: "idle" }
   | { kind: "extract"; progress: ExtractProgress; backend?: string }
-  | { kind: "upload"; pct: number }
+  | { kind: "upload"; mb: string }
   | { kind: "save" }
   | { kind: "done" }
   | { kind: "error"; message: string };
@@ -44,17 +45,20 @@ export default function TrackUploader({ parts, kind }: Props) {
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
       const extractMs = performance.now() - t0;
 
-      setStatus({ kind: "upload", pct: 0 });
+      setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
       // Blob 경로는 ASCII 만. 한글·공백 파일명은 멀티파트 생성(mpu)에서 400 이 난다
       const blob = await upload(`${kind}s/${partId}/${Date.now()}.${safeExt(file.name)}`, file, {
-        access: "public",
+        access: BLOB_ACCESS,
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({ kind, partId }),
-        // 멀티파트 생성(mpu)이 이 스토어에서 400 을 내고 클라이언트가 10회 재시도하느라 0% 에 멈춤 (PLAN 열린 질문 참고).
-        // 단일 PUT 은 확인됐으므로 100MB 미만은 단일 PUT, 그 이상만 멀티파트
+        // 100MB 미만은 단일 PUT, 그 이상만 멀티파트
         multipart: file.size >= MULTIPART_MIN_BYTES,
-        onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
+        // onUploadProgress 는 주지 않는다. 주면 최신 Chrome 에서 SDK 가 스트리밍 fetch(duplex) 로 올리는데,
+        // 이건 HTTP/2 에서만 되고 백신·보안 프로그램이 HTTPS 를 가로채 HTTP/1.1 로 내려간 환경에선 실패한다.
+        // 재시도 횟수는 next.config.ts 의 VERCEL_BLOB_RETRIES 로 줄여 둠
+      }).catch((e: unknown) => {
+        throw new Error(`업로드 실패 (${(file.size / 1024 / 1024).toFixed(1)}MB): ${(e as Error).message}`);
       });
 
       setStatus({ kind: "save" });
@@ -107,7 +111,7 @@ function StatusLine({ status }: { status: Status }) {
       const { stage, value } = status.progress;
       return <small>{STAGE_LABEL[stage]}{stage === "pitch" ? ` ${Math.round(value * 100)}%` : "…"}</small>;
     }
-    case "upload": return <small>업로드 중… {Math.round(status.pct)}%</small>;
+    case "upload": return <small>업로드 중… ({status.mb}MB)</small>;
     case "save": return <small>저장·분석 중…</small>;
     case "done": return <small>완료</small>;
     case "error": return <small style={{ color: "crimson" }}>에러: {status.message}</small>;

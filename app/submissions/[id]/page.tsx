@@ -5,6 +5,7 @@ import ReportView from "@/components/ReportView";
 import { submissionWhereForUser } from "@/lib/access";
 import { THRESHOLDS } from "@/lib/analysis/thresholds";
 import type { PhraseResult, ReportSummary } from "@/lib/analysis/types";
+import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
 import { formatMs, formatOffset } from "@/lib/format";
 import { requireUser } from "@/lib/session";
@@ -29,8 +30,8 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
   const mixOnly = sub.status === "MIX_ONLY";
   const inst = await prisma.instrumental.findFirst({ where: { projectId: sub.part.project.id }, orderBy: { createdAt: "desc" } });
   const channels: MixChannel[] = [
-    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: inst.blobUrl, durationMs: inst.durationMs }] : []),
-    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: sub.blobUrl, durationMs: sub.durationMs, submissionId: sub.id },
+    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), durationMs: inst.durationMs }] : []),
+    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: audioSrc(sub.blobUrl), durationMs: sub.durationMs, submissionId: sub.id },
   ];
   const comments = sub.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
 
@@ -60,9 +61,9 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
               summary={sub.report.summary as unknown as ReportSummary}
               phrases={sub.report.phrases as unknown as PhraseResult[]}
               globalOffsetMs={sub.report.globalOffsetMs}
-              guideUrl={sub.report.guideTrack.blobUrl}
+              guideUrl={audioSrc(sub.report.guideTrack.blobUrl)}
               guideDurationMs={sub.report.guideTrack.durationMs}
-              subUrl={sub.blobUrl}
+              subUrl={audioSrc(sub.blobUrl)}
             />
           )}
         </>

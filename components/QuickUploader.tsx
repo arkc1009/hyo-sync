@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BLOB_ACCESS } from "@/lib/blob";
 
 type Target =
   /** 담당자 INST */
@@ -11,7 +12,7 @@ type Target =
 
 type Status =
   | { kind: "idle" }
-  | { kind: "upload"; pct: number }
+  | { kind: "upload"; mb: string }
   | { kind: "save" }
   | { kind: "error"; message: string };
 
@@ -31,18 +32,18 @@ export default function QuickUploader({ target }: { target: Target }) {
     if (!file || !ready) return;
     try {
       const durationMs = await readDurationMs(file);
-      setStatus({ kind: "upload", pct: 0 });
+      setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
-      // 경로 ASCII·멀티파트 기준은 TrackUploader 와 같다
+      // 경로 ASCII·멀티파트 기준, private access, 진행률 콜백 없음은 TrackUploader 와 같다.
+      // onUploadProgress 를 주면 SDK 가 스트리밍 업로드를 하는데 Chrome 은 HTTP/2 에서만 허용해 http/1.1 환경에서 실패한다
       const [path, payload] = target.kind === "inst"
         ? [`insts/${target.projectId}`, { kind: "inst", projectId: target.projectId }]
         : [`submissions/${partId}`, { kind: "submission", partId }];
       const blob = await upload(`${path}/${Date.now()}.${safeExt(file.name)}`, file, {
-        access: "public",
+        access: BLOB_ACCESS,
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify(payload),
         multipart: file.size >= MULTIPART_MIN_BYTES,
-        onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
       });
 
       setStatus({ kind: "save" });
@@ -78,7 +79,7 @@ export default function QuickUploader({ target }: { target: Target }) {
       )}
       <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       <button type="button" onClick={run} disabled={busy || !ready}>{target.kind === "inst" ? "INST 업로드" : "트랙 올리기"}</button>
-      {status.kind === "upload" && <small>업로드 중… {Math.round(status.pct)}%</small>}
+      {status.kind === "upload" && <small>업로드 중… ({status.mb} MB)</small>}
       {status.kind === "save" && <small>저장 중…</small>}
       {status.kind === "error" && <small style={{ color: "crimson" }}>에러: {status.message}</small>}
     </div>

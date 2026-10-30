@@ -33,8 +33,8 @@ export async function POST(req: Request) {
           tokenPayload: JSON.stringify({ userId: user.id, ...payload }),
         };
       },
-      // 업로드 완료 웹훅. DB 행은 클라이언트가 /api/guides 로 따로 만든다 (로컬에선 웹훅이 안 오므로)
-      onUploadCompleted: async () => {},
+      // onUploadCompleted 는 두지 않는다. 있으면 토큰에 callbackUrl 이 실려 Blob 이 이 배포로 웹훅을 보내는데,
+      // DB 행은 클라이언트가 /api/guides 로 따로 만들어 필요 없고 프리뷰(배포 보호)·로컬에선 웹훅이 닿지도 않는다
     });
     return NextResponse.json(json);
   } catch (e) {
