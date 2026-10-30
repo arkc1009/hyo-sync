@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ExtractProgress } from "@/lib/pitch";
+import { createRetryGuard, MAX_UPLOAD_ATTEMPTS } from "@/lib/upload/retryGuard";
 
 interface Props {
   parts: { id: string; name: string }[];
@@ -13,7 +14,7 @@ interface Props {
 type Status =
   | { kind: "idle" }
   | { kind: "extract"; progress: ExtractProgress; backend?: string }
-  | { kind: "upload"; pct: number }
+  | { kind: "upload"; pct: number; attempt: number }
   | { kind: "save" }
   | { kind: "done" }
   | { kind: "error"; message: string };
@@ -44,8 +45,13 @@ export default function TrackUploader({ parts, kind }: Props) {
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
       const extractMs = performance.now() - t0;
 
-      setStatus({ kind: "upload", pct: 0 });
+      setStatus({ kind: "upload", pct: 0, attempt: 1 });
       const { upload } = await import("@vercel/blob/client");
+      // 서버가 CORS 헤더 없이 400 을 주면 SDK 가 네트워크 에러로 보고 같은 파일을 10회 다시 올린다 (0%→100% 무한 반복처럼 보임).
+      // 재시도는 한 번까지만 허용하고 그 뒤엔 중단해서 에러를 보여준다
+      const guard = createRetryGuard();
+      const abort = new AbortController();
+      let gaveUp = false;
       // Blob 경로는 ASCII 만. 한글·공백 파일명은 멀티파트 생성(mpu)에서 400 이 난다
       const blob = await upload(`${kind}s/${partId}/${Date.now()}.${safeExt(file.name)}`, file, {
         access: "public",
@@ -54,7 +60,19 @@ export default function TrackUploader({ parts, kind }: Props) {
         // 멀티파트 생성(mpu)이 이 스토어에서 400 을 내고 클라이언트가 10회 재시도하느라 0% 에 멈춤 (PLAN 열린 질문 참고).
         // 단일 PUT 은 확인됐으므로 100MB 미만은 단일 PUT, 그 이상만 멀티파트
         multipart: file.size >= MULTIPART_MIN_BYTES,
-        onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
+        abortSignal: abort.signal,
+        onUploadProgress: ({ loaded, percentage }) => {
+          const attempt = guard.onProgress(loaded);
+          if (attempt === null) {
+            gaveUp = true;
+            abort.abort();
+            return;
+          }
+          setStatus({ kind: "upload", pct: percentage, attempt });
+        },
+      }).catch((e: unknown) => {
+        if (gaveUp) throw new Error(uploadRejectedMessage(file.size));
+        throw e;
       });
 
       setStatus({ kind: "save" });
@@ -94,6 +112,12 @@ export default function TrackUploader({ parts, kind }: Props) {
   );
 }
 
+function uploadRejectedMessage(bytes: number) {
+  const mb = (bytes / 1024 / 1024).toFixed(1);
+  return `업로드가 ${MAX_UPLOAD_ATTEMPTS}번 연속 서버에서 거부돼 중단했습니다 (${mb}MB). ` +
+    "큰 파일에서 생기는 저장소 문제로 보입니다. mp3 등 더 작은 파일로 다시 시도해 주세요";
+}
+
 /** "효이 듀엣.WAV" → "wav". 확장자가 없거나 이상하면 "bin" */
 function safeExt(name: string) {
   const m = /\.([a-z0-9]{1,5})$/i.exec(name);
@@ -107,7 +131,13 @@ function StatusLine({ status }: { status: Status }) {
       const { stage, value } = status.progress;
       return <small>{STAGE_LABEL[stage]}{stage === "pitch" ? ` ${Math.round(value * 100)}%` : "…"}</small>;
     }
-    case "upload": return <small>업로드 중… {Math.round(status.pct)}%</small>;
+    case "upload":
+      return (
+        <small>
+          업로드 중… {Math.round(status.pct)}%
+          {status.attempt > 1 && ` (재시도 ${status.attempt - 1}/${MAX_UPLOAD_ATTEMPTS - 1})`}
+        </small>
+      );
     case "save": return <small>저장·분석 중…</small>;
     case "done": return <small>완료</small>;
     case "error": return <small style={{ color: "crimson" }}>에러: {status.message}</small>;
