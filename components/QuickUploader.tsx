@@ -3,6 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+type Target =
+  /** 담당자 INST */
+  | { kind: "inst"; projectId: string }
+  /** 멤버 트랙. 가이드 비교 없이 믹서·피드백용 */
+  | { kind: "track"; parts: { id: string; name: string }[] };
+
 type Status =
   | { kind: "idle" }
   | { kind: "upload"; pct: number }
@@ -11,33 +17,43 @@ type Status =
 
 const MULTIPART_MIN_BYTES = 100 * 1024 * 1024;
 
-/** INST(반주) 업로드. 피치 추출 없이 길이만 읽고 Blob 업로드 → /api/instrumentals */
-export default function InstUploader({ projectId }: { projectId: string }) {
+/** 피치 추출 없이 길이만 읽고 Blob 업로드 → API 저장. INST 와 믹스용 트랙 */
+export default function QuickUploader({ target }: { target: Target }) {
   const router = useRouter();
+  const parts = target.kind === "track" ? target.parts : [];
+  const [partId, setPartId] = useState(parts[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const busy = status.kind === "upload" || status.kind === "save";
+  const ready = !!file && (target.kind === "inst" || !!partId);
 
   async function run() {
-    if (!file) return;
+    if (!file || !ready) return;
     try {
       const durationMs = await readDurationMs(file);
       setStatus({ kind: "upload", pct: 0 });
       const { upload } = await import("@vercel/blob/client");
       // 경로 ASCII·멀티파트 기준은 TrackUploader 와 같다
-      const blob = await upload(`insts/${projectId}/${Date.now()}.${safeExt(file.name)}`, file, {
+      const [path, payload] = target.kind === "inst"
+        ? [`insts/${target.projectId}`, { kind: "inst", projectId: target.projectId }]
+        : [`submissions/${partId}`, { kind: "submission", partId }];
+      const blob = await upload(`${path}/${Date.now()}.${safeExt(file.name)}`, file, {
         access: "public",
         handleUploadUrl: "/api/blob/upload",
-        clientPayload: JSON.stringify({ kind: "inst", projectId }),
+        clientPayload: JSON.stringify(payload),
         multipart: file.size >= MULTIPART_MIN_BYTES,
         onUploadProgress: ({ percentage }) => setStatus({ kind: "upload", pct: percentage }),
       });
 
       setStatus({ kind: "save" });
-      const res = await fetch("/api/instrumentals", {
+      const res = await fetch(target.kind === "inst" ? "/api/instrumentals" : "/api/submissions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ projectId, blobUrl: blob.url, durationMs }),
+        body: JSON.stringify(
+          target.kind === "inst"
+            ? { projectId: target.projectId, blobUrl: blob.url, durationMs }
+            : { partId, blobUrl: blob.url, durationMs, mixOnly: true },
+        ),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
@@ -52,8 +68,16 @@ export default function InstUploader({ projectId }: { projectId: string }) {
 
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      {target.kind === "track" && (
+        <label>
+          파트{" "}
+          <select value={partId} onChange={(e) => setPartId(e.target.value)} disabled={busy}>
+            {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      )}
       <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      <button type="button" onClick={run} disabled={busy || !file}>INST 업로드</button>
+      <button type="button" onClick={run} disabled={busy || !ready}>{target.kind === "inst" ? "INST 업로드" : "트랙 올리기"}</button>
       {status.kind === "upload" && <small>업로드 중… {Math.round(status.pct)}%</small>}
       {status.kind === "save" && <small>저장 중…</small>}
       {status.kind === "error" && <small style={{ color: "crimson" }}>에러: {status.message}</small>}

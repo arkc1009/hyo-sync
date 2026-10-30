@@ -22,3 +22,12 @@ export async function removePart(projectId: string, partId: string) {
   await prisma.part.deleteMany({ where: { id: partId, project: { id: projectId, ownerId: user.id } } });
   revalidatePath(`/projects/${projectId}`);
 }
+
+/** 멤버 열람 범위 변경. 담당자만 */
+export async function setVisibility(projectId: string, formData: FormData) {
+  const user = await requireUser();
+  const v = formData.get("visibility");
+  if (v !== "TEAM" && v !== "OWN_ONLY") return;
+  await prisma.project.updateMany({ where: { id: projectId, ownerId: user.id }, data: { visibility: v } });
+  revalidatePath(`/projects/${projectId}`);
+}

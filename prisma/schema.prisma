@@ -14,6 +14,14 @@ enum SubmissionStatus {
   UPLOADED
   ANALYZED
   FAILED
+  /// 가이드 비교 없이 믹서·피드백용으로만 올린 트랙. pitch 없음
+  MIX_ONLY
+}
+
+/// 멤버가 다른 멤버의 녹음본·코멘트를 볼 수 있는지. 담당자는 항상 전부 본다
+enum SubmissionVisibility {
+  TEAM
+  OWN_ONLY
 }
 
 model User {
@@ -32,13 +40,14 @@ model User {
 }
 
 model Project {
-  id         String   @id @default(cuid())
+  id         String               @id @default(cuid())
   title      String
   ownerId    String
-  inviteCode String   @unique @default(cuid())
-  createdAt  DateTime @default(now())
+  inviteCode String               @unique @default(cuid())
+  createdAt  DateTime             @default(now())
+  visibility SubmissionVisibility @default(TEAM)
 
-  owner   User            @relation(fields: [ownerId], references: [id])
+  owner         User            @relation(fields: [ownerId], references: [id])
   members       ProjectMember[]
   parts         Part[]
   instrumentals Instrumental[]
@@ -93,7 +102,8 @@ model Submission {
   blobUrl    String
   durationMs Int
   take       Int              @default(1)
-  pitch      Json
+  /// MIX_ONLY 면 null
+  pitch      Json?
   status     SubmissionStatus @default(UPLOADED)
   createdAt  DateTime         @default(now())
 

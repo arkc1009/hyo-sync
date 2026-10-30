@@ -6,18 +6,31 @@ import { validatePitchTrack } from "@/lib/analysis/validate";
 import { prisma } from "@/lib/db";
 import { currentUser } from "@/lib/session";
 
-// body: { partId, blobUrl, durationMs, pitch: PitchTrack }
-// 제출을 만들고 그 자리에서 파트의 최신 가이드와 compare() → Report 저장
+// body: { partId, blobUrl, durationMs, pitch: PitchTrack } | { partId, blobUrl, durationMs, mixOnly: true }
+// 제출을 만들고 그 자리에서 파트의 최신 가이드와 compare() → Report 저장.
+// mixOnly 면 가이드 비교 없이 믹서·피드백용 트랙으로만 저장 (pitch 없음, 가이드 없어도 됨)
 export async function POST(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "로그인 필요" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | { partId?: unknown; blobUrl?: unknown; durationMs?: unknown; pitch?: unknown }
+    | { partId?: unknown; blobUrl?: unknown; durationMs?: unknown; pitch?: unknown; mixOnly?: unknown }
     | null;
-  if (!body || typeof body.partId !== "string" || typeof body.blobUrl !== "string" || typeof body.durationMs !== "number") {
+  if (!body || typeof body.partId !== "string" || typeof body.blobUrl !== "string" || typeof body.durationMs !== "number" || !(body.durationMs > 0)) {
     return NextResponse.json({ error: "partId / blobUrl / durationMs 필요" }, { status: 400 });
   }
+
+  if (body.mixOnly === true) {
+    const part = await partForUser(body.partId, user.id);
+    if (!part) return NextResponse.json({ error: "파트 접근 권한 없음" }, { status: 403 });
+    const takeCount = await prisma.submission.count({ where: { partId: part.id, userId: user.id } });
+    const submission = await prisma.submission.create({
+      data: { partId: part.id, userId: user.id, blobUrl: body.blobUrl, durationMs: Math.round(body.durationMs), take: takeCount + 1, status: "MIX_ONLY" },
+      select: { id: true },
+    });
+    return NextResponse.json({ id: submission.id }, { status: 201 });
+  }
+
   const v = validatePitchTrack(body.pitch);
   if (!v.ok) return NextResponse.json({ error: `pitch: ${v.error}` }, { status: 400 });
 

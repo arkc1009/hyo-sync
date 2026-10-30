@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import InstUploader from "@/components/InstUploader";
+import QuickUploader from "@/components/QuickUploader";
 import TrackUploader from "@/components/TrackUploader";
-import { projectForUser } from "@/lib/access";
+import { projectForUser, visibleSubmissionsWhere } from "@/lib/access";
 import type { ReportSummary } from "@/lib/analysis/types";
 import { prisma } from "@/lib/db";
 import { formatMs } from "@/lib/format";
 import { requireUser } from "@/lib/session";
-import { addPart, removePart } from "./actions";
+import { addPart, removePart, setVisibility } from "./actions";
 
 export default async function ProjectPage({ params }: PageProps<"/projects/[id]">) {
   const { id } = await params;
@@ -22,6 +22,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
     include: {
       guideTracks: { orderBy: { createdAt: "desc" }, select: { id: true, blobUrl: true, durationMs: true, createdAt: true } },
       submissions: {
+        where: visibleSubmissionsWhere(project, user.id),
         orderBy: { createdAt: "desc" },
         include: {
           user: { select: { name: true, email: true } },
@@ -33,7 +34,6 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
   });
   const members = await prisma.projectMember.findMany({ where: { projectId: id }, include: { user: { select: { name: true, email: true } } } });
   const hasGuide = parts.some((p) => p.guideTracks.length > 0);
-  const hasSubmission = parts.some((p) => p.submissions.length > 0);
   const inst = await prisma.instrumental.findFirst({ where: { projectId: id }, orderBy: { createdAt: "desc" } });
 
   return (
@@ -48,11 +48,25 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
           초대 링크: <code>/join/{project.inviteCode}</code>
         </p>
       )}
-      {(hasGuide || hasSubmission) && (
-        <p style={{ display: "flex", gap: 8 }}>
-          {hasGuide && <Link href={`/projects/${id}/submit`}><button type="button">녹음본 제출</button></Link>}
-          {hasSubmission && <Link href={`/projects/${id}/mix`}><button type="button">믹서로 듣기</button></Link>}
+      {parts.length > 0 && (
+        <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Link href={`/projects/${id}/mix`}><button type="button">믹서 · 트랙 올리기</button></Link>
+          {hasGuide && <Link href={`/projects/${id}/submit`}><button type="button">가이드 비교 제출</button></Link>}
         </p>
+      )}
+      {isOwner ? (
+        <form action={setVisibility.bind(null, id)} style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+          <label>
+            멤버 열람 범위{" "}
+            <select name="visibility" defaultValue={project.visibility}>
+              <option value="TEAM">다른 멤버 녹음본·코멘트도 보기</option>
+              <option value="OWN_ONLY">본인 것만 보기</option>
+            </select>
+          </label>
+          <button type="submit">저장</button>
+        </form>
+      ) : (
+        project.visibility === "OWN_ONLY" && <p><small>이 프로젝트는 본인 녹음본과 코멘트만 보여요.</small></p>
       )}
 
       <h2>INST</h2>
@@ -66,7 +80,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
       )}
       {isOwner && (
         <div style={{ marginTop: 8 }}>
-          <InstUploader projectId={id} />
+          <QuickUploader target={{ kind: "inst", projectId: id }} />
           <small>멤버 녹음본과 시작점이 맞는 반주 파일. {inst ? "새로 올리면 최신 것으로 바뀌어요." : ""}</small>
         </div>
       )}
@@ -132,6 +146,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
 }
 
 function SummaryBadge({ summary, status }: { summary?: ReportSummary; status: string }) {
+  if (status === "MIX_ONLY") return <small style={{ opacity: 0.7 }}>믹스용</small>;
   if (status === "FAILED") return <small style={{ color: "crimson" }}>분석 실패</small>;
   if (!summary) return <small>분석 중</small>;
   return (
