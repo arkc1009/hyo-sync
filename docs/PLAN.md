@@ -10,7 +10,8 @@
 - [x] Vercel Blob 멀티파트 업로드: `vercel.com/api/blob/mpu` create 가 400 (ASCII 경로여도). 클라이언트가 알 수 없는 에러로 보고 10회 재시도해 0% 에 멈춤. 임시로 100MB 미만은 단일 PUT. 400 응답 본문 확인 후 원인 규명 필요 (wildcard `audio/*` 가 mpu 에선 미지원? 토큰 옵션?)
   - 단일 PUT 도 29MB wav 에서 100% 후 400 (5MB mp3 는 성공). 응답은 134바이트 JSON 인데 `Access-Control-Allow-Origin` 이 없어 브라우저가 본문을 못 읽고, SDK(`@vercel/blob` 2.8.2)는 이를 네트워크 에러로 보고 10회 재업로드해 0%→100% 가 무한 반복처럼 보인다. 같은 증상의 Vercel 커뮤니티 글(2.6.1, 25MB 까지는 성공)도 미해결
   - → **원인 확정 (2026-10-30, `scripts/blob-repro.mjs`)**: 본문은 `bad_request: Cannot use public access on a private store`. 스토어가 private 인데 앱이 `access: "public"` 으로 올리고 있었음 (크기와 무관, mpu 400 도 같은 원인으로 추정)
-  - 대응: 업로드는 `access: "private"` (`lib/blob.ts` 의 `BLOB_ACCESS`), 재생은 권한을 확인하는 프록시 `GET /api/blob/audio?url=` (`audioSrc()`), 재시도는 1회 후 중단·에러 표시 (`lib/upload/retryGuard.ts`)
+  - 대응: 업로드는 `access: "private"` (`lib/blob.ts` 의 `BLOB_ACCESS`), 재생은 권한을 확인하는 프록시 `GET /api/blob/audio?url=` (`audioSrc()`), 재시도는 1회 (`next.config.ts` 의 `VERCEL_BLOB_RETRIES`)
+  - 2차 원인 (2026-10-30): 같은 파일·토큰으로 curl 은 200 인데 브라우저만 실패. `onUploadProgress` 를 주면 최신 Chrome 에서 SDK 가 스트리밍 fetch(duplex half) 로 올리고, 이건 HTTP/2 전용이라 백신 등이 HTTPS 를 가로채 HTTP/1.1 이 되는 환경에선 실패한다 (curl 의 CRYPT_E_NO_REVOCATION_CHECK 로 가로채기 정황). 진행률(%) 표시를 빼고 일반 업로드로
 - [ ] 가이드가 파트당 여러 개일 때 비교 대상: 최신 1개 vs 담당자가 지정 — 일단 최신, 필요하면 Phase 4에서 지정 UI
 
 ---
