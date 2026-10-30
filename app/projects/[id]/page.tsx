@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import TrackUploader from "@/components/TrackUploader";
 import { projectForUser } from "@/lib/access";
 import type { ReportSummary } from "@/lib/analysis/types";
+import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
 import { formatMs } from "@/lib/format";
 import { requireUser } from "@/lib/session";
@@ -63,7 +64,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
               )}
               {latest ? (
                 <div>
-                  <audio controls preload="none" src={latest.blobUrl} />{" "}
+                  <audio controls preload="none" src={audioSrc(latest.blobUrl)} />{" "}
                   <small>{formatMs(latest.durationMs)} · {latest.createdAt.toLocaleString("ko-KR")}</small>
                 </div>
               ) : (

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import ReportView from "@/components/ReportView";
 import { THRESHOLDS } from "@/lib/analysis/thresholds";
 import type { PhraseResult, ReportSummary } from "@/lib/analysis/types";
+import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
 import { formatMs, formatOffset } from "@/lib/format";
 import { requireUser } from "@/lib/session";
@@ -38,9 +39,9 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
           summary={sub.report.summary as unknown as ReportSummary}
           phrases={sub.report.phrases as unknown as PhraseResult[]}
           globalOffsetMs={sub.report.globalOffsetMs}
-          guideUrl={sub.report.guideTrack.blobUrl}
+          guideUrl={audioSrc(sub.report.guideTrack.blobUrl)}
           guideDurationMs={sub.report.guideTrack.durationMs}
-          subUrl={sub.blobUrl}
+          subUrl={audioSrc(sub.blobUrl)}
         />
       )}
 

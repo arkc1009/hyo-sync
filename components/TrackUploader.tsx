@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { BLOB_ACCESS } from "@/lib/blob";
 import type { ExtractProgress } from "@/lib/pitch";
 import { createRetryGuard, MAX_UPLOAD_ATTEMPTS } from "@/lib/upload/retryGuard";
 
@@ -47,18 +48,17 @@ export default function TrackUploader({ parts, kind }: Props) {
 
       setStatus({ kind: "upload", pct: 0, attempt: 1 });
       const { upload } = await import("@vercel/blob/client");
-      // 서버가 CORS 헤더 없이 400 을 주면 SDK 가 네트워크 에러로 보고 같은 파일을 10회 다시 올린다 (0%→100% 무한 반복처럼 보임).
+      // 서버가 CORS 헤더 없이 400 을 주면 (예: private 스토어에 public 업로드) SDK 가 네트워크 에러로 보고 같은 파일을 10회 다시 올린다 (0%→100% 무한 반복처럼 보임).
       // 재시도는 한 번까지만 허용하고 그 뒤엔 중단해서 에러를 보여준다
       const guard = createRetryGuard();
       const abort = new AbortController();
       let gaveUp = false;
       // Blob 경로는 ASCII 만. 한글·공백 파일명은 멀티파트 생성(mpu)에서 400 이 난다
       const blob = await upload(`${kind}s/${partId}/${Date.now()}.${safeExt(file.name)}`, file, {
-        access: "public",
+        access: BLOB_ACCESS,
         handleUploadUrl: "/api/blob/upload",
         clientPayload: JSON.stringify({ kind, partId }),
-        // 멀티파트 생성(mpu)이 이 스토어에서 400 을 내고 클라이언트가 10회 재시도하느라 0% 에 멈춤 (PLAN 열린 질문 참고).
-        // 단일 PUT 은 확인됐으므로 100MB 미만은 단일 PUT, 그 이상만 멀티파트
+        // 100MB 미만은 단일 PUT, 그 이상만 멀티파트
         multipart: file.size >= MULTIPART_MIN_BYTES,
         abortSignal: abort.signal,
         onUploadProgress: ({ loaded, percentage }) => {
@@ -115,7 +115,7 @@ export default function TrackUploader({ parts, kind }: Props) {
 function uploadRejectedMessage(bytes: number) {
   const mb = (bytes / 1024 / 1024).toFixed(1);
   return `업로드가 ${MAX_UPLOAD_ATTEMPTS}번 연속 서버에서 거부돼 중단했습니다 (${mb}MB). ` +
-    "큰 파일에서 생기는 저장소 문제로 보입니다. mp3 등 더 작은 파일로 다시 시도해 주세요";
+    "잠시 후 다시 시도하고, 계속되면 담당자에게 알려 주세요";
 }
 
 /** "효이 듀엣.WAV" → "wav". 확장자가 없거나 이상하면 "bin" */

@@ -7,9 +7,10 @@
 - [x] 브라우저 피치 추출기: CREPE tiny(TF.js) vs pitchy(McLeod, 모델 없음) — Phase 0 스파이크에서 실제 녹음본으로 비교 후 결정. CREPE가 TF.js로 안정적으로 안 돌면 pitchy로 시작하고 `extractPitch()` 뒤에서 교체
   - → **확정: CREPE tiny 기본, pitchy 폴백.** 합성 + 실제 인터페이스 녹음 2개(중음역·저음역)에서 둘 다 옥타브 에러 0, 99% 일치. CREPE 선택 근거는 confidence 의미가 안정적(pitchy clarity 중앙값은 파일마다 0.66~0.79로 흔들려 임계치 0.9가 불안정)이고 GPU에서 4분 곡 4~8초라 속도 부담 없음. 폰 녹음은 미검증 — 문제 생기면 그때 재검토 (`spike/README.md`)
 - [ ] 임계치 초기값(SPEC C-5의 25/50 cent, 60/120 ms)은 추정치. Phase 3에서 실제 팀 녹음본 5개 이상으로 "담당자가 귀로 잡은 구간"과 비교해 조정
-- [ ] Vercel Blob 멀티파트 업로드: `vercel.com/api/blob/mpu` create 가 400 (ASCII 경로여도). 클라이언트가 알 수 없는 에러로 보고 10회 재시도해 0% 에 멈춤. 임시로 100MB 미만은 단일 PUT. 400 응답 본문 확인 후 원인 규명 필요 (wildcard `audio/*` 가 mpu 에선 미지원? 토큰 옵션?)
+- [x] Vercel Blob 멀티파트 업로드: `vercel.com/api/blob/mpu` create 가 400 (ASCII 경로여도). 클라이언트가 알 수 없는 에러로 보고 10회 재시도해 0% 에 멈춤. 임시로 100MB 미만은 단일 PUT. 400 응답 본문 확인 후 원인 규명 필요 (wildcard `audio/*` 가 mpu 에선 미지원? 토큰 옵션?)
   - 단일 PUT 도 29MB wav 에서 100% 후 400 (5MB mp3 는 성공). 응답은 134바이트 JSON 인데 `Access-Control-Allow-Origin` 이 없어 브라우저가 본문을 못 읽고, SDK(`@vercel/blob` 2.8.2)는 이를 네트워크 에러로 보고 10회 재업로드해 0%→100% 가 무한 반복처럼 보인다. 같은 증상의 Vercel 커뮤니티 글(2.6.1, 25MB 까지는 성공)도 미해결
-  - 대응: 업로드 재시도는 1회까지만 허용하고 그 뒤 중단·에러 표시 (`lib/upload/retryGuard.ts`). 원인(크기 한도 / Content-Type / mpu)은 `scripts/blob-repro.mjs` 를 로컬에서 토큰으로 돌려 응답 본문을 확인한 뒤 결정
+  - → **원인 확정 (2026-10-30, `scripts/blob-repro.mjs`)**: 본문은 `bad_request: Cannot use public access on a private store`. 스토어가 private 인데 앱이 `access: "public"` 으로 올리고 있었음 (크기와 무관, mpu 400 도 같은 원인으로 추정)
+  - 대응: 업로드는 `access: "private"` (`lib/blob.ts` 의 `BLOB_ACCESS`), 재생은 권한을 확인하는 프록시 `GET /api/blob/audio?url=` (`audioSrc()`), 재시도는 1회 후 중단·에러 표시 (`lib/upload/retryGuard.ts`)
 - [ ] 가이드가 파트당 여러 개일 때 비교 대상: 최신 1개 vs 담당자가 지정 — 일단 최신, 필요하면 Phase 4에서 지정 UI
 
 ---
