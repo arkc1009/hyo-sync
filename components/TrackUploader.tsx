@@ -114,6 +114,6 @@ function StatusLine({ status }: { status: Status }) {
     case "upload": return <small>업로드 중… ({status.mb}MB)</small>;
     case "save": return <small>저장·분석 중…</small>;
     case "done": return <small>완료</small>;
-    case "error": return <small style={{ color: "crimson" }}>에러: {status.message}</small>;
+    case "error": return <small style={{ color: "var(--danger)" }}>에러: {status.message}</small>;
   }
 }

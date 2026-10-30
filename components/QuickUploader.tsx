@@ -81,7 +81,7 @@ export default function QuickUploader({ target }: { target: Target }) {
       <button type="button" onClick={run} disabled={busy || !ready}>{target.kind === "inst" ? "INST 업로드" : "트랙 올리기"}</button>
       {status.kind === "upload" && <small>업로드 중… ({status.mb} MB)</small>}
       {status.kind === "save" && <small>저장 중…</small>}
-      {status.kind === "error" && <small style={{ color: "crimson" }}>에러: {status.message}</small>}
+      {status.kind === "error" && <small style={{ color: "var(--danger)" }}>에러: {status.message}</small>}
     </div>
   );
 }
