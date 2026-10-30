@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import InstUploader from "@/components/InstUploader";
 import TrackUploader from "@/components/TrackUploader";
 import { projectForUser } from "@/lib/access";
 import type { ReportSummary } from "@/lib/analysis/types";
@@ -22,12 +23,18 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
       guideTracks: { orderBy: { createdAt: "desc" }, select: { id: true, blobUrl: true, durationMs: true, createdAt: true } },
       submissions: {
         orderBy: { createdAt: "desc" },
-        include: { user: { select: { name: true, email: true } }, report: { select: { summary: true } } },
+        include: {
+          user: { select: { name: true, email: true } },
+          report: { select: { summary: true } },
+          _count: { select: { comments: true } },
+        },
       },
     },
   });
   const members = await prisma.projectMember.findMany({ where: { projectId: id }, include: { user: { select: { name: true, email: true } } } });
   const hasGuide = parts.some((p) => p.guideTracks.length > 0);
+  const hasSubmission = parts.some((p) => p.submissions.length > 0);
+  const inst = await prisma.instrumental.findFirst({ where: { projectId: id }, orderBy: { createdAt: "desc" } });
 
   return (
     <main>
@@ -41,10 +48,27 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
           초대 링크: <code>/join/{project.inviteCode}</code>
         </p>
       )}
-      {hasGuide && (
-        <p>
-          <Link href={`/projects/${id}/submit`}><button type="button">녹음본 제출</button></Link>
+      {(hasGuide || hasSubmission) && (
+        <p style={{ display: "flex", gap: 8 }}>
+          {hasGuide && <Link href={`/projects/${id}/submit`}><button type="button">녹음본 제출</button></Link>}
+          {hasSubmission && <Link href={`/projects/${id}/mix`}><button type="button">믹서로 듣기</button></Link>}
         </p>
+      )}
+
+      <h2>INST</h2>
+      {inst ? (
+        <div>
+          <audio controls preload="none" src={inst.blobUrl} />{" "}
+          <small>{formatMs(inst.durationMs)} · {inst.createdAt.toLocaleString("ko-KR")}</small>
+        </div>
+      ) : (
+        <p><small>INST 없음{isOwner ? ". 올리면 믹서에서 녹음본과 같이 들을 수 있어요." : ""}</small></p>
+      )}
+      {isOwner && (
+        <div style={{ marginTop: 8 }}>
+          <InstUploader projectId={id} />
+          <small>멤버 녹음본과 시작점이 맞는 반주 파일. {inst ? "새로 올리면 최신 것으로 바뀌어요." : ""}</small>
+        </div>
       )}
 
       <h2>파트</h2>
@@ -77,6 +101,7 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
                         {s.userId === user.id ? "나" : (s.user.name ?? s.user.email)} · 테이크 {s.take}
                       </Link>{" "}
                       <SummaryBadge summary={s.report?.summary as unknown as ReportSummary | undefined} status={s.status} />
+                      {s._count.comments > 0 && <small style={{ color: "#6e56cf" }}> · 코멘트 {s._count.comments}</small>}
                     </li>
                   ))}
                 </ul>

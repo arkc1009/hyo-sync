@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import Mixer, { type MixChannel } from "@/components/Mixer";
 import ReportView from "@/components/ReportView";
 import { THRESHOLDS } from "@/lib/analysis/thresholds";
 import type { PhraseResult, ReportSummary } from "@/lib/analysis/types";
@@ -15,13 +16,21 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
     where: { id, part: { project: { OR: [{ ownerId: user.id }, { members: { some: { userId: user.id } } }] } } },
     include: {
       user: { select: { name: true, email: true } },
-      part: { include: { project: { select: { id: true, title: true } } } },
+      part: { include: { project: { select: { id: true, title: true, ownerId: true } } } },
+      comments: { orderBy: { startMs: "asc" }, select: { id: true, submissionId: true, startMs: true, endMs: true, body: true, createdAt: true } },
       report: { include: { guideTrack: { select: { blobUrl: true, durationMs: true, createdAt: true } } } },
     },
   });
   if (!sub) notFound();
 
   const who = sub.userId === user.id ? "내" : (sub.user.name ?? sub.user.email);
+  const isOwner = sub.part.project.ownerId === user.id;
+  const inst = await prisma.instrumental.findFirst({ where: { projectId: sub.part.project.id }, orderBy: { createdAt: "desc" } });
+  const channels: MixChannel[] = [
+    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: inst.blobUrl, durationMs: inst.durationMs }] : []),
+    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: sub.blobUrl, durationMs: sub.durationMs, submissionId: sub.id },
+  ];
+  const comments = sub.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
 
   return (
     <main>
@@ -31,6 +40,14 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
         <small>{formatMs(sub.durationMs)} · {sub.createdAt.toLocaleString("ko-KR")}</small>
       </p>
 
+      {(comments.length > 0 || isOwner) && (
+        <section style={{ margin: "16px 0 24px" }}>
+          <h2>담당자 피드백</h2>
+          <Mixer channels={channels} comments={comments} canComment={isOwner} />
+        </section>
+      )}
+
+      <h2>자동 분석 리포트</h2>
       {sub.status === "FAILED" || !sub.report ? (
         <p style={{ color: "crimson" }}>분석에 실패했어요. 다시 제출해 보세요.</p>
       ) : (

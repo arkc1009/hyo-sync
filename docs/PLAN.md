@@ -10,6 +10,8 @@
 - [ ] Vercel Blob 멀티파트 업로드: `vercel.com/api/blob/mpu` create 가 400 (ASCII 경로여도). 클라이언트가 알 수 없는 에러로 보고 10회 재시도해 0% 에 멈춤. 임시로 100MB 미만은 단일 PUT. 400 응답 본문 확인 후 원인 규명 필요 (wildcard `audio/*` 가 mpu 에선 미지원? 토큰 옵션?)
 - [ ] 가이드가 파트당 여러 개일 때 비교 대상: 최신 1개 vs 담당자가 지정 — 일단 최신, 필요하면 Phase 4에서 지정 UI
 
+- [ ] 믹서용 트랙은 기존 제출(Submission)을 그대로 쓴다 → 가이드 없는 파트는 트랙을 못 올린다. 피치 분석 없이 "믹스·피드백용으로만" 올리는 경로가 필요한지
+
 ---
 
 ## Phase 0 — 피치 추출 스파이크 (앱 없이, 단일 HTML)
@@ -81,6 +83,16 @@
 **완료 기준**: 실제 팀 1곡 작업을 이 서비스로 끝까지 진행
 
 ---
+
+## 확장 A — 웹 믹서 + 구간 코멘트
+DAW 없이 INST + 멤버 녹음본을 웹에서 같이 듣고, 담당자가 구간을 찍어 피드백을 남기면 멤버가 자기 제출 페이지에서 본다. 싱크는 멤버가 맞춰 올렸다고 가정(가정 1), EQ·패닝은 범위 밖
+- [x] 스키마: `Instrumental`(프로젝트당 여러 개, 최신 1개 사용), `TrackComment`(submissionId, startMs, endMs, body)
+- [x] INST 업로드 (담당자만, 피치 추출 없음): Blob client upload `kind: "inst"` → `POST /api/instrumentals`
+- [x] `/projects/[id]/mix`: INST + 파트·멤버별 최신 테이크 동시 재생, 채널별 볼륨/뮤트/솔로, 타임라인 클릭=이동·드래그=구간
+  - 가장 긴 채널을 기준 시계로 두고 50ms 넘게 벌어진 채널을 다시 맞춤 (`lib/mix`). 볼륨은 `HTMLMediaElement.volume` — iOS 는 볼륨 무시(뮤트·솔로만)
+- [x] 구간 코멘트 작성·삭제 (담당자만) `POST /api/submissions/[id]/comments`, `DELETE /api/comments/[id]`
+- [x] 멤버: `/submissions/[id]` 상단에 INST + 내 녹음 믹서와 코멘트 목록, 클릭하면 1초 앞부터 구간 재생. 프로젝트 페이지 제출 목록에 코멘트 수
+- [ ] 실제 곡으로 동시 재생 싱크(체감 어긋남) 확인 — 특히 큰 wav 여러 개를 동시에 버퍼링할 때
 
 ## 이후 백로그
 - 서버 측 피치 추출(RMVPE on Modal) — `extractPitch()` 교체, 노이즈 많은 녹음 대응
