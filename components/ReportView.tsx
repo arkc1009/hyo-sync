@@ -72,7 +72,7 @@ export default function ReportView({ phrases, guideUrl, subUrl, guideDurationMs 
 
       {/* 타임라인: 가이드 시간축 위에 소절을 verdict 색으로 */}
       <div
-        style={{ position: "relative", height: 36, background: "#8882", borderRadius: 4, margin: "8px 0 4px" }}
+        style={{ position: "relative", height: 36, background: "var(--surface-2)", borderRadius: 4, margin: "8px 0 4px" }}
         aria-label="소절 타임라인"
       >
         {phrases.map((p) => {
@@ -102,7 +102,7 @@ export default function ReportView({ phrases, guideUrl, subUrl, guideDurationMs 
       </small>
 
       {sel && (
-        <div style={{ margin: "12px 0", padding: 12, border: "1px solid #8884", borderRadius: 6 }}>
+        <div style={{ margin: "12px 0", padding: 12, border: "1px solid var(--border)", borderRadius: 6 }}>
           <strong>소절 {sel.index + 1}</strong> · {formatMsFine(sel.guideStartMs)}–{formatMsFine(sel.guideEndMs)} ·{" "}
           <span style={{ color: VERDICT_COLOR[sel.verdict] }}>{VERDICT_LABEL[sel.verdict]}</span>
           {sel.reasons.length > 0 && <> · {sel.reasons.map((r) => REASON_LABEL[r]).join(", ")}</>}
@@ -125,7 +125,7 @@ export default function ReportView({ phrases, guideUrl, subUrl, guideDurationMs 
             <tr
               key={p.index}
               onClick={() => setSelected(p.index)}
-              style={{ cursor: "pointer", background: selected === p.index ? "#8882" : undefined, borderTop: "1px solid #8884" }}
+              style={{ cursor: "pointer", background: selected === p.index ? "var(--surface-2)" : undefined, borderTop: "1px solid var(--border)" }}
             >
               <td>{p.index + 1}</td>
               <td>{formatMsFine(p.guideStartMs)}–{formatMsFine(p.guideEndMs)}</td>

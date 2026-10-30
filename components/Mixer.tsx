@@ -33,7 +33,7 @@ type Range = { startMs: number; endMs: number };
 
 const TICK_MS = 100;
 const DRAG_MIN_PX = 4;
-const COMMENT_COLOR = "#6e56cf";
+const COMMENT_COLOR = "var(--accent)";
 
 /**
  * INST + 녹음본 동시 재생. 채널마다 <audio> 하나, 가장 긴 채널을 기준 시계로 두고 나머지를 맞춘다.
@@ -195,9 +195,9 @@ export default function Mixer({ channels, comments: initialComments, canComment 
                   onChange={(e) => update(i, { volume: Number(e.target.value) / 100 })} style={{ width: 120 }} />
                 <small style={{ width: 32, fontVariantNumeric: "tabular-nums" }}>{Math.round(s.volume * 100)}</small>
                 {/* 채널별 코멘트 위치 */}
-                <div style={{ position: "relative", flex: 1, height: 10, background: "#8881", borderRadius: 2 }}>
+                <div style={{ position: "relative", flex: 1, height: 10, background: "var(--surface-2)", borderRadius: 2 }}>
                   {c.durationMs < totalMs && (
-                    <div style={{ position: "absolute", top: 0, bottom: 0, left: `${(c.durationMs / totalMs) * 100}%`, right: 0, background: "#8883" }} />
+                    <div style={{ position: "absolute", top: 0, bottom: 0, left: `${(c.durationMs / totalMs) * 100}%`, right: 0, background: "var(--surface-3)" }} />
                   )}
                   {own.map((m) => (
                     <button key={m.id} type="button" title={m.body} onClick={() => playComment(m)}
@@ -232,7 +232,7 @@ export default function Mixer({ channels, comments: initialComments, canComment 
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
             {sorted.map((c) => (
               <li key={c.id} style={{
-                padding: 8, borderRadius: 6, border: `1px solid ${selectedId === c.id ? COMMENT_COLOR : "#8884"}`,
+                padding: 8, borderRadius: 6, border: `1px solid ${selectedId === c.id ? COMMENT_COLOR : "var(--border)"}`,
                 display: "flex", gap: 8, alignItems: "flex-start",
               }}>
                 <button type="button" onClick={() => playComment(c)} title="구간 재생">▶</button>
@@ -309,10 +309,10 @@ function Timeline(props: {
           setPreview(null);
         } else props.onSeek(d.ms);
       }}
-      style={{ position: "relative", height: 44, background: "#8882", borderRadius: 4, cursor: "pointer", touchAction: "none", userSelect: "none" }}
+      style={{ position: "relative", height: 44, background: "var(--surface-2)", borderRadius: 4, cursor: "pointer", touchAction: "none", userSelect: "none" }}
     >
       {shown && (
-        <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(shown.startMs), width: pct(shown.endMs - shown.startMs), background: "#6e56cf33", borderLeft: "1px solid #6e56cf", borderRight: "1px solid #6e56cf" }} />
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(shown.startMs), width: pct(shown.endMs - shown.startMs), background: "var(--accent-soft)", borderLeft: "1px solid var(--accent)", borderRight: "1px solid var(--accent)" }} />
       )}
       {markers.map((m) => (
         <button
@@ -328,7 +328,7 @@ function Timeline(props: {
           }}
         />
       ))}
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(posMs), width: 2, background: "currentColor", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(posMs), width: 2, background: "var(--highlight)", pointerEvents: "none" }} />
     </div>
   );
 }
@@ -373,7 +373,7 @@ function CommentForm(props: {
   const end = range?.endMs ?? null;
 
   return (
-    <section style={{ padding: 12, border: "1px solid #8884", borderRadius: 6, display: "grid", gap: 8 }}>
+    <section style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 6, display: "grid", gap: 8 }}>
       <strong>구간 코멘트</strong>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {targets.length > 1 && (
@@ -397,7 +397,7 @@ function CommentForm(props: {
       <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="예: 여기 음이 살짝 낮아요. 끝음 반 박 더 끌어 주세요" />
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <button type="button" onClick={submit} disabled={busy || !range || !body.trim()}>코멘트 남기기</button>
-        {error && <small style={{ color: "crimson" }}>에러: {error}</small>}
+        {error && <small style={{ color: "var(--danger)" }}>에러: {error}</small>}
       </div>
     </section>
   );

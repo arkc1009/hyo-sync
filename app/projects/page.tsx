@@ -1,8 +1,11 @@
 import Link from "next/link";
-import { signOut } from "@/lib/auth";
+import { Badge, Button, Card, EmptyState, PageHeader } from "@/components/ui";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { createProject } from "./actions";
+import styles from "./page.module.css";
+
+export const metadata = { title: "프로젝트" };
 
 export default async function ProjectsPage() {
   const user = await requireUser();
@@ -13,33 +16,39 @@ export default async function ProjectsPage() {
   });
 
   return (
-    <main>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <h1>프로젝트</h1>
-        <form action={async () => { "use server"; await signOut({ redirectTo: "/" }); }}>
-          <small>{user.email}</small> <button type="submit">로그아웃</button>
-        </form>
-      </header>
+    <>
+      <PageHeader title="프로젝트" meta="곡 하나가 프로젝트 하나예요. 파트를 나누고 멤버를 초대해 녹음본을 모아요." />
 
-      <form action={createProject} style={{ display: "flex", gap: 8, margin: "1rem 0" }}>
-        <input name="title" placeholder="곡 제목" required />
-        <button type="submit">만들기</button>
-      </form>
+      <Card title="새 프로젝트">
+        <form action={createProject} className={styles.create}>
+          <input name="title" placeholder="곡 제목" required aria-label="곡 제목" />
+          <Button type="submit" variant="primary">만들기</Button>
+        </form>
+      </Card>
 
       {projects.length === 0 ? (
-        <p>아직 프로젝트가 없어요. 곡 제목을 넣고 만들거나, 초대 링크로 참여하세요.</p>
+        <div className={styles.empty}>
+          <EmptyState title="아직 프로젝트가 없어요">
+            곡 제목을 넣고 만들거나, 담당자에게 받은 초대 링크로 참여하세요.
+          </EmptyState>
+        </div>
       ) : (
-        <ul>
+        <div className={styles.grid}>
           {projects.map((p) => (
-            <li key={p.id}>
-              <Link href={`/projects/${p.id}`}>{p.title}</Link>{" "}
-              <small>
-                {p.ownerId === user.id ? "담당자" : `담당자 ${p.owner.name ?? ""}`} · 파트 {p._count.parts} · 멤버 {p._count.members}
-              </small>
-            </li>
+            <Link key={p.id} href={`/projects/${p.id}`} className={styles.project}>
+              <span className={styles.title}>{p.title}</span>
+              <span className={styles.stats}>
+                <span><strong>{p._count.parts}</strong> 파트</span>
+                <span><strong>{p._count.members}</strong> 멤버</span>
+              </span>
+              <span className={styles.foot}>
+                {p.ownerId === user.id ? <Badge tone="accent">담당자</Badge> : <span>담당자 {p.owner.name ?? ""}</span>}
+                <span>{p.createdAt.toLocaleDateString("ko-KR")}</span>
+              </span>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
-    </main>
+    </>
   );
 }

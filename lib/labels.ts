@@ -7,12 +7,21 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   UNRELIABLE: "판정 불가",
 };
 
+/** 판정 색. app/globals.css 의 토큰 (테마에 따라 바뀜) */
 export const VERDICT_COLOR: Record<Verdict, string> = {
-  OK: "#3cb371",
-  FIXABLE: "#f0b429",
-  RERECORD: "#e5484d",
-  UNRELIABLE: "#9a9a9a",
+  OK: "var(--ok)",
+  FIXABLE: "var(--fixable)",
+  RERECORD: "var(--rerecord)",
+  UNRELIABLE: "var(--unreliable)",
 };
+
+/** Badge tone 이름 (components/ui/Badge) */
+export const VERDICT_TONE = {
+  OK: "ok",
+  FIXABLE: "fixable",
+  RERECORD: "rerecord",
+  UNRELIABLE: "unreliable",
+} as const satisfies Record<Verdict, string>;
 
 export const REASON_LABEL: Record<Reason, string> = {
   PITCH_SHARP: "음정 높음",
