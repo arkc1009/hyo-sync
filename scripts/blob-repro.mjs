@@ -18,6 +18,8 @@ import { del } from "@vercel/blob";
 const API = "https://vercel.com/api/blob";
 const API_VERSION = "13"; // @vercel/blob 2.8.2 의 BLOB_API_VERSION
 const ORIGIN = process.env.REPRO_ORIGIN ?? "https://hyo-sync.vercel.app";
+// 스토어가 private 이라 앱과 같은 private 이 기본. REPRO_ACCESS=public 으로 비교 가능
+const ACCESS = process.env.REPRO_ACCESS ?? "private";
 
 const rwToken = process.env.BLOB_READ_WRITE_TOKEN;
 if (!rwToken) {
@@ -30,7 +32,7 @@ const uploaded = [];
 
 for (const c of cases) {
   for (const contentType of [c.contentType, "audio/mpeg"]) {
-    console.log(`\n=== ${c.label} (${mb(c.body.byteLength)}MB) contentType=${contentType} ===`);
+    console.log(`\n=== ${c.label} (${mb(c.body.byteLength)}MB) access=${ACCESS} contentType=${contentType} ===`);
     await tryPut(c, contentType);
   }
   await tryMpuCreate(c, c.contentType);
@@ -59,7 +61,7 @@ function headers(token, contentType, extra = {}) {
     origin: ORIGIN,
     "x-api-version": API_VERSION,
     "x-vercel-blob-store-id": token.split("_")[3] ?? "",
-    "x-vercel-blob-access": "public",
+    "x-vercel-blob-access": ACCESS,
     "x-add-random-suffix": "1",
     "x-content-type": contentType,
     ...extra,
