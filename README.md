@@ -18,7 +18,7 @@ pnpm dev
 - `BLOB_READ_WRITE_TOKEN` — Vercel 대시보드 → Storage → Blob 스토어 생성 후 토큰. 로컬에서도 이 토큰으로 실제 Blob 에 올라간다
 
 ## Vercel 배포
-1. Vercel → Add New Project → `arkc1009/hyo-sync` import. Framework = Next.js, Root Directory = `.` (루트). 빌드는 `vercel-build` 스크립트가 잡혀서 프로덕션(`VERCEL_ENV=production`)에서만 `prisma migrate deploy` 후 `next build`. 프리뷰 배포는 마이그레이션 없이 빌드만
+1. Vercel → Add New Project → `arkc1009/hyo-sync` import. Framework = Next.js, Root Directory = `.` (루트). 빌드는 `vercel-build` 스크립트가 잡혀서 프로덕션(`VERCEL_ENV=production`)과 DB 주소가 있는 프리뷰에서 `prisma migrate deploy` 후 `next build`. DB 주소가 없는 프리뷰는 빌드만. 프리뷰가 프로덕션과 같은 DB 를 쓰면 머지 전 브랜치의 마이그레이션도 그 DB 에 적용되므로, 마이그레이션은 기존 컬럼을 지우거나 바꾸지 않는 추가형으로 만든다
 2. Storage 탭 → Create Database → **Neon** (Postgres). 연결하면 `DATABASE_URL`(풀러)과 `DATABASE_URL_UNPOOLED`(직접)가 자동으로 들어간다. 마이그레이션은 직접 주소를, 앱은 풀러 주소를 쓴다 (`prisma.config.ts`)
 3. Storage 탭 → 만들어 둔 Blob 스토어 Connect → `BLOB_READ_WRITE_TOKEN` 자동
 4. Settings → Environment Variables 에 직접 추가: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`
