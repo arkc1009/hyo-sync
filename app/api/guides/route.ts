@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { partForUser } from "@/lib/access";
 import { validatePitchTrack } from "@/lib/analysis/validate";
 import { prisma } from "@/lib/db";
+import { validatePeaks } from "@/lib/mix/peaks";
 import { currentUser } from "@/lib/session";
 
-// body: { partId, blobUrl, durationMs, pitch: PitchTrack }
+// body: { partId, blobUrl, durationMs, pitch: PitchTrack, peaks? }
 export async function POST(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "로그인 필요" }, { status: 401 });
 
   const body = (await req.json().catch(() => null)) as
-    | { partId?: unknown; blobUrl?: unknown; durationMs?: unknown; pitch?: unknown }
+    | { partId?: unknown; blobUrl?: unknown; durationMs?: unknown; pitch?: unknown; peaks?: unknown }
     | null;
   if (!body || typeof body.partId !== "string" || typeof body.blobUrl !== "string" || typeof body.durationMs !== "number") {
     return NextResponse.json({ error: "partId / blobUrl / durationMs 필요" }, { status: 400 });
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
       durationMs: Math.round(body.durationMs),
       // PitchTrack 은 인터페이스라 Prisma 의 InputJsonValue 인덱스 시그니처와 안 맞는다. 구조는 JSON 호환
       pitch: { ...v.track },
+      peaks: validatePeaks(body.peaks) ?? undefined,
       uploadedById: user.id,
     },
     select: { id: true },

@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import PhraseList from "@/components/PhraseList";
+import type { PhraseResult, Verdict } from "@/lib/analysis/types";
 import { formatMsFine } from "@/lib/format";
+import { VERDICT_COLOR } from "@/lib/labels";
 import { channelGains, COMMENT_PREROLL_MS, needsResync, type ChannelState } from "@/lib/mix";
 import { backfillPeaks } from "@/lib/mix/peaks-browser";
 import styles from "./Mixer.module.css";
@@ -17,6 +20,10 @@ export interface MixChannel {
   blobUrl: string;
   /** 파형 피크 (lib/mix/peaks.ts). null 이면 처음 열 때 계산 */
   peaks: number[] | null;
+  /** 리포트 화면: 내 녹음·가이드 채널. 소절 판정색을 파형에 칠하고 소절별 A/B 재생에 쓴다 */
+  role?: "mine" | "guide";
+  /** 처음에 뮤트 (가이드는 내 녹음과 겹쳐 들리지 않게) */
+  initiallyMuted?: boolean;
 }
 
 export interface MixComment {
@@ -33,7 +40,12 @@ interface Props {
   comments: MixComment[];
   /** 담당자면 true: 구간 코멘트 작성·삭제 */
   canComment: boolean;
+  /** 리포트 화면: 자동 분석 소절. 있으면 role 채널 파형에 판정색을 칠하고 소절 목록을 보여 준다 */
+  phrases?: PhraseResult[];
 }
+
+/** 소절 앞뒤 여유 (A/B 재생) */
+const PHRASE_PAD_MS = 150;
 
 type Range = { startMs: number; endMs: number };
 
@@ -45,9 +57,12 @@ const COMMENT_COLOR = "var(--accent)";
  * INST + 녹음본 동시 재생. 채널마다 <audio> 하나, 가장 긴 채널을 기준 시계로 두고 나머지를 맞춘다.
  * 볼륨은 HTMLMediaElement.volume (iOS 는 볼륨 무시, 뮤트·솔로만 동작). url 은 audioSrc() 경로 (서명 URL 로 리다이렉트)
  */
-export default function Mixer({ channels, comments: initialComments, canComment }: Props) {
+export default function Mixer({ channels, comments: initialComments, canComment, phrases }: Props) {
   const els = useRef<(HTMLAudioElement | null)[]>([]);
-  const [states, setStates] = useState<ChannelState[]>(() => channels.map(() => ({ volume: 0.8, muted: false, solo: false })));
+  const [states, setStates] = useState<ChannelState[]>(() =>
+    channels.map((c) => ({ volume: 0.8, muted: !!c.initiallyMuted, solo: false })),
+  );
+  const [phraseIdx, setPhraseIdx] = useState<number | null>(null);
   const [posMs, setPosMs] = useState(0);
   const [playing, setPlaying] = useState(false);
   const stopAtMs = useRef<number | null>(null);
@@ -154,9 +169,42 @@ export default function Mixer({ channels, comments: initialComments, canComment 
 
   function playComment(c: MixComment) {
     setSelectedId(c.id);
+    setPhraseIdx(null);
     setRange({ startMs: c.startMs, endMs: c.endMs });
     void playFrom(Math.max(0, c.startMs - COMMENT_PREROLL_MS), c.endMs);
   }
+
+  function selectPhrase(p: PhraseResult) {
+    setPhraseIdx(p.index);
+    setSelectedId(null);
+    setRange({ startMs: p.subStartMs, endMs: p.subEndMs });
+  }
+
+  /** 소절 하나를 가이드 또는 내 녹음만 솔로로 재생 */
+  function playPhrase(p: PhraseResult, role: "mine" | "guide") {
+    selectPhrase(p);
+    const target = channels.findIndex((c) => c.role === role);
+    if (target < 0) return;
+    setStates((s) => s.map((c, j) => ({ ...c, solo: j === target })));
+    const [start, end] = role === "guide" ? [p.guideStartMs, p.guideEndMs] : [p.subStartMs, p.subEndMs];
+    void playFrom(Math.max(0, start - PHRASE_PAD_MS), end + PHRASE_PAD_MS);
+  }
+
+  /** 솔로를 풀고 내 녹음 + INST 로 그 소절 재생 */
+  function playPhraseMix(p: PhraseResult) {
+    selectPhrase(p);
+    setStates((s) => s.map((c) => ({ ...c, solo: false })));
+    void playFrom(Math.max(0, p.subStartMs - COMMENT_PREROLL_MS), p.subEndMs + PHRASE_PAD_MS);
+  }
+
+  const bandsByRole = useMemo(() => {
+    if (!phrases) return null;
+    const toBand = (start: number, end: number, p: PhraseResult) => ({ index: p.index, startMs: start, endMs: end, verdict: p.verdict });
+    return {
+      mine: phrases.map((p) => toBand(p.subStartMs, p.subEndMs, p)),
+      guide: phrases.map((p) => toBand(p.guideStartMs, p.guideEndMs, p)),
+    };
+  }, [phrases]);
 
   function update(i: number, patch: Partial<ChannelState>) {
     setStates((s) => s.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -176,14 +224,14 @@ export default function Mixer({ channels, comments: initialComments, canComment 
         <audio key={c.id} ref={(el) => { els.current[i] = el; }} src={c.url} preload="auto" />
       ))}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button type="button" onClick={toggle} style={{ minWidth: 64 }}>{playing ? "❚❚ 정지" : "▶ 재생"}</button>
-        <small style={{ fontVariantNumeric: "tabular-nums" }}>{formatMsFine(posMs)} / {formatMsFine(totalMs)}</small>
+        <small style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{formatMsFine(posMs)} / {formatMsFine(totalMs)}</small>
         {range && (
           <>
-            <small>· 구간 {formatMsFine(range.startMs)}–{formatMsFine(range.endMs)}</small>
+            <small style={{ whiteSpace: "nowrap" }}>· 구간 {formatMsFine(range.startMs)}–{formatMsFine(range.endMs)}</small>
             <button type="button" onClick={() => playFrom(range.startMs, range.endMs)}>▶ 구간</button>
-            <button type="button" onClick={() => { setRange(null); setSelectedId(null); }}>구간 해제</button>
+            <button type="button" onClick={() => { setRange(null); setSelectedId(null); setPhraseIdx(null); }}>구간 해제</button>
           </>
         )}
       </div>
@@ -195,7 +243,7 @@ export default function Mixer({ channels, comments: initialComments, canComment 
         markers={sorted}
         selectedId={selectedId}
         onSeek={seek}
-        onRange={(r) => { setRange(r); setSelectedId(null); }}
+        onRange={(r) => { setRange(r); setSelectedId(null); setPhraseIdx(null); }}
         onMarker={playComment}
       />
       <small style={{ opacity: 0.7 }}>타임라인을 클릭하면 그 위치로, 드래그하면 구간을 잡아요.</small>
@@ -226,6 +274,11 @@ export default function Mixer({ channels, comments: initialComments, canComment 
                 range={range && { left: (range.startMs / totalMs) * 100, width: ((range.endMs - range.startMs) / totalMs) * 100 }}
                 silent={silent}
                 label={c.label}
+                bands={c.role && bandsByRole ? bandsByRole[c.role] : undefined}
+                selectedBand={phraseIdx}
+                onBand={(i) => phrases && selectPhrase(phrases[i])}
+                totalMs={totalMs}
+                durationMs={c.durationMs}
                 onSeek={(ratio) => seek(Math.round(ratio * totalMs))}
               >
                 {own.map((m) => (
@@ -238,6 +291,18 @@ export default function Mixer({ channels, comments: initialComments, canComment 
           );
         })}
       </div>
+
+      {phrases && phrases.length > 0 && (
+        <PhraseList
+          phrases={phrases}
+          selected={phraseIdx}
+          playing={playing}
+          onSelect={selectPhrase}
+          onPlay={playPhrase}
+          onPlayMix={playPhraseMix}
+          onStop={pauseAll}
+        />
+      )}
 
       {canComment && (
         <CommentForm
@@ -287,10 +352,16 @@ function Lane(props: {
   range: { left: number; width: number } | null;
   silent: boolean;
   label: string;
+  /** 판정색 구간 (리포트 화면). 있으면 재생 진행 강조 대신 구간마다 판정색으로 칠한다 */
+  bands?: Band[];
+  selectedBand?: number | null;
+  onBand?: (index: number) => void;
+  totalMs: number;
+  durationMs: number;
   onSeek: (ratio: number) => void;
   children?: ReactNode;
 }) {
-  const { peaks, widthPct, posPct, range } = props;
+  const { peaks, widthPct, posPct, range, bands } = props;
   // 파형 영역 기준 재생 진행률
   const played = Math.max(0, Math.min(100, (posPct / widthPct) * 100));
   return (
@@ -304,12 +375,43 @@ function Lane(props: {
       }}
     >
       {range && <div className={styles.laneRange} style={{ left: `${range.left}%`, width: `${range.width}%` }} />}
+      {bands?.map((b) => (
+        <button
+          key={b.index}
+          type="button"
+          className={styles.band}
+          data-selected={props.selectedBand === b.index || undefined}
+          title={`소절 ${b.index + 1}`}
+          aria-label={`소절 ${b.index + 1} 선택`}
+          onClick={(e) => { e.stopPropagation(); props.onBand?.(b.index); }}
+          style={{
+            left: `${(b.startMs / props.totalMs) * 100}%`,
+            width: `${((b.endMs - b.startMs) / props.totalMs) * 100}%`,
+            "--band": VERDICT_COLOR[b.verdict],
+          } as CSSProperties}
+        />
+      ))}
       <div className={styles.wave} style={{ width: `${widthPct}%` }}>
         {peaks?.length ? (
-          <>
-            <WavePath peaks={peaks} className={styles.waveBase} />
-            <WavePath peaks={peaks} className={styles.wavePlayed} style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }} />
-          </>
+          bands ? (
+            <>
+              <WavePath peaks={peaks} className={styles.waveBase} />
+              {bands.map((b) => (
+                <WavePath
+                  key={b.index}
+                  peaks={peaks}
+                  className={styles.waveBand}
+                  crop={[b.startMs / props.durationMs, b.endMs / props.durationMs]}
+                  style={{ "--band": VERDICT_COLOR[b.verdict] } as CSSProperties}
+                />
+              ))}
+            </>
+          ) : (
+            <>
+              <WavePath peaks={peaks} className={styles.waveBase} />
+              <WavePath peaks={peaks} className={styles.wavePlayed} style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }} />
+            </>
+          )
         ) : (
           <div className={peaks ? styles.waveFlat : styles.wavePending} />
         )}
@@ -320,15 +422,34 @@ function Lane(props: {
   );
 }
 
-/** 위아래 대칭 파형. viewBox 를 피크 수에 맞추고 가로로 늘린다 */
-function WavePath({ peaks, className, style }: { peaks: number[]; className: string; style?: CSSProperties }) {
+interface Band {
+  index: number;
+  startMs: number;
+  endMs: number;
+  verdict: Verdict;
+}
+
+/**
+ * 위아래 대칭 파형. viewBox 를 피크 수에 맞추고 가로로 늘린다.
+ * crop=[0~1, 0~1] 이면 그 비율 구간만 잘라 같은 위치에 그린다 (판정색 구간)
+ */
+function WavePath({ peaks, className, style, crop }: { peaks: number[]; className: string; style?: CSSProperties; crop?: [number, number] }) {
   const d = useMemo(() => {
     const top = peaks.map((p, i) => `${i + 0.5},${(50 - Math.max(p, 0.01) * 48).toFixed(1)}`);
     const bottom = peaks.map((p, i) => `${i + 0.5},${(50 + Math.max(p, 0.01) * 48).toFixed(1)}`).reverse();
     return `M0,50 L${top.join(" L")} L${peaks.length},50 L${bottom.join(" L")} Z`;
   }, [peaks]);
+  const [from, to] = crop ?? [0, 1];
+  const x = Math.max(0, from) * peaks.length;
+  const w = Math.max(0.5, (Math.min(1, to) - Math.max(0, from)) * peaks.length);
   return (
-    <svg className={className} style={style} viewBox={`0 0 ${peaks.length} 100`} preserveAspectRatio="none" aria-hidden>
+    <svg
+      className={className}
+      style={crop ? { ...style, left: `${Math.max(0, from) * 100}%`, width: `${(w / peaks.length) * 100}%` } : style}
+      viewBox={`${x} 0 ${w} 100`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
       <path d={d} />
     </svg>
   );

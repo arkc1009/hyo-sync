@@ -87,6 +87,8 @@ model GuideTrack {
   durationMs   Int
   sampleRate   Int      @default(16000)
   pitch        Json
+  /// 리포트 파형용 피크 (lib/mix/peaks.ts)
+  peaks        Json?
   uploadedById String
   createdAt    DateTime @default(now())
 

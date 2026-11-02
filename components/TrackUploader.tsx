@@ -45,8 +45,8 @@ export default function TrackUploader({ parts, kind }: Props) {
       const { extractPitch } = await import("@/lib/pitch");
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
       const extractMs = performance.now() - t0;
-      // 믹서 파형용. 가이드는 믹서에 안 나와서 녹음본만
-      const peaks = kind === "submission" ? await peaksFromFile(file) : null;
+      // 믹서·리포트 파형용
+      const peaks = await peaksFromFile(file);
 
       setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
