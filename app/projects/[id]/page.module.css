@@ -74,3 +74,7 @@
   .layout { grid-template-columns: 1fr; }
   .side { position: static; }
 }
+
+.todo { margin: calc(var(--space-4) * -1) 0 var(--space-6); }
+.todoList { display: inline-flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-left: var(--space-3); }
+.todoItem { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text); font-weight: 600; }

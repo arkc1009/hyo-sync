@@ -6,3 +6,5 @@ export { Notice } from "./Notice";
 export { PageHeader } from "./PageHeader";
 export { ConfirmButton } from "./ConfirmButton";
 export { CopyField } from "./CopyField";
+export { FileDrop } from "./FileDrop";
+export { UploadSteps, type UploadStep } from "./UploadSteps";

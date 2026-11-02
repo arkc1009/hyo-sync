@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import ProgressBoard, { StatusBadge } from "@/components/ProgressBoard";
 import QuickUploader from "@/components/QuickUploader";
 import TrackUploader from "@/components/TrackUploader";
 import { Badge, Button, ButtonLink, Card, ConfirmButton, CopyField, EmptyState, Notice, PageHeader } from "@/components/ui";
@@ -8,6 +9,7 @@ import type { ReportSummary } from "@/lib/analysis/types";
 import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
 import { formatMs } from "@/lib/format";
+import { latestByCell, todoParts, type ProgressSubmission } from "@/lib/progress";
 import { requireUser } from "@/lib/session";
 import { addPart, removePart, setVisibility } from "./actions";
 import styles from "./page.module.css";
@@ -39,6 +41,26 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
   const hasGuide = parts.some((p) => p.guideTracks.length > 0);
   const inst = await prisma.instrumental.findFirst({ where: { projectId: id }, orderBy: { createdAt: "desc" } });
 
+  // 현황판: 파트 × 멤버 최신 테이크. 본인 것만 보는 프로젝트의 멤버는 자기 열만
+  const progressSubs: ProgressSubmission[] = parts.flatMap((p) =>
+    p.submissions.map((s) => ({
+      id: s.id,
+      partId: p.id,
+      userId: s.userId,
+      take: s.take,
+      status: s.status,
+      summary: (s.report?.summary as unknown as ReportSummary | undefined) ?? null,
+      commentCount: s._count.comments,
+    })),
+  );
+  const latest = latestByCell(progressSubs);
+  const boardParts = parts.map((p) => ({ id: p.id, name: p.name, hasGuide: p.guideTracks.length > 0 }));
+  const boardMembers = members
+    .filter((m) => isOwner || project.visibility === "TEAM" || m.userId === user.id)
+    .map((m) => ({ userId: m.userId, name: m.user.name ?? m.user.email }))
+    .sort((a, b) => (a.userId === user.id ? -1 : b.userId === user.id ? 1 : 0));
+  const todo = todoParts(boardParts, latest, user.id);
+
   return (
     <>
       <PageHeader
@@ -53,10 +75,32 @@ export default async function ProjectPage({ params }: PageProps<"/projects/[id]"
         )}
       />
 
+      {todo.length > 0 && (
+        <div className={styles.todo}>
+          <Notice tone="warning">
+            <strong>내 할 일</strong>
+            <span className={styles.todoList}>
+              {todo.map((t) => (
+                <Link key={t.partId} href={`/projects/${id}/submit`} className={styles.todoItem}>
+                  {t.name} <StatusBadge status={t.status} />
+                </Link>
+              ))}
+            </span>
+          </Notice>
+        </div>
+      )}
+
       <div className={styles.layout}>
         <div className={styles.column}>
+          {parts.length > 0 && boardMembers.length > 0 && (
+            <Card title="현황" description="파트별로 멤버의 최신 테이크 상태예요. 칸을 누르면 리포트로 가요.">
+              <ProgressBoard projectId={id} parts={boardParts} members={boardMembers} latest={latest} meId={user.id} />
+            </Card>
+          )}
+
           <div className={styles.sectionTitle}>
             <h2>파트</h2>
+            <small>가이드와 전체 테이크</small>
           </div>
 
           {parts.length === 0 && (

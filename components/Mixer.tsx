@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import PhraseList from "@/components/PhraseList";
+import { Button } from "@/components/ui";
 import type { PhraseResult, Verdict } from "@/lib/analysis/types";
 import { formatMsFine } from "@/lib/format";
 import { VERDICT_COLOR } from "@/lib/labels";
@@ -51,7 +52,6 @@ type Range = { startMs: number; endMs: number };
 
 const TICK_MS = 100;
 const DRAG_MIN_PX = 4;
-const COMMENT_COLOR = "var(--accent)";
 
 /**
  * INST + 녹음본 동시 재생. 채널마다 <audio> 하나, 가장 긴 채널을 기준 시계로 두고 나머지를 맞춘다.
@@ -110,6 +110,20 @@ export default function Mixer({ channels, comments: initialComments, canComment,
   // 언마운트 시 정지
   useEffect(() => pauseAll, [pauseAll]);
 
+  // 스페이스: 재생/정지 (입력 중이 아닐 때)
+  const toggleRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || e.repeat) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea, select, button, [contenteditable]")) return;
+      e.preventDefault();
+      toggleRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // 재생 중: 기준 시계 따라 위치 갱신, 벌어진 채널 재동기화, 구간 끝에서 정지
   useEffect(() => {
     if (!playing) return;
@@ -167,6 +181,10 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     } else void playFrom(posMs >= totalMs ? 0 : posMs);
   }
 
+  useEffect(() => {
+    toggleRef.current = toggle;
+  });
+
   function playComment(c: MixComment) {
     setSelectedId(c.id);
     setPhraseIdx(null);
@@ -219,20 +237,28 @@ export default function Mixer({ channels, comments: initialComments, canComment,
   const sorted = useMemo(() => [...comments].sort((a, b) => a.startMs - b.startMs), [comments]);
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
+    <div className={styles.mixer}>
       {channels.map((c, i) => (
         <audio key={c.id} ref={(el) => { els.current[i] = el; }} src={c.url} preload="auto" />
       ))}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" onClick={toggle} style={{ minWidth: 64 }}>{playing ? "❚❚ 정지" : "▶ 재생"}</button>
-        <small style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{formatMsFine(posMs)} / {formatMsFine(totalMs)}</small>
+      <div className={styles.transport}>
+        <button type="button" onClick={toggle} className={styles.play} aria-label={playing ? "정지" : "재생"} title="재생/정지 (스페이스)">
+          {playing ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><rect x="3" y="2" width="3.5" height="12" rx="1" fill="currentColor" /><rect x="9.5" y="2" width="3.5" height="12" rx="1" fill="currentColor" /></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden><path d="M4 2.5v11a.5.5 0 0 0 .77.42l8.5-5.5a.5.5 0 0 0 0-.84l-8.5-5.5A.5.5 0 0 0 4 2.5z" fill="currentColor" /></svg>
+          )}
+        </button>
+        <span className={`${styles.clock} mono`}>
+          {formatMsFine(posMs)} <span className={styles.clockTotal}>/ {formatMsFine(totalMs)}</span>
+        </span>
         {range && (
-          <>
-            <small style={{ whiteSpace: "nowrap" }}>· 구간 {formatMsFine(range.startMs)}–{formatMsFine(range.endMs)}</small>
-            <button type="button" onClick={() => playFrom(range.startMs, range.endMs)}>▶ 구간</button>
-            <button type="button" onClick={() => { setRange(null); setSelectedId(null); setPhraseIdx(null); }}>구간 해제</button>
-          </>
+          <span className={styles.rangeChip}>
+            <span className="mono">{formatMsFine(range.startMs)}–{formatMsFine(range.endMs)}</span>
+            <button type="button" className={styles.chipButton} onClick={() => playFrom(range.startMs, range.endMs)}>▶ 구간</button>
+            <button type="button" className={styles.chipButton} aria-label="구간 해제" onClick={() => { setRange(null); setSelectedId(null); setPhraseIdx(null); }}>✕</button>
+          </span>
         )}
       </div>
 
@@ -246,7 +272,7 @@ export default function Mixer({ channels, comments: initialComments, canComment,
         onRange={(r) => { setRange(r); setSelectedId(null); setPhraseIdx(null); }}
         onMarker={playComment}
       />
-      <small style={{ opacity: 0.7 }}>타임라인을 클릭하면 그 위치로, 드래그하면 구간을 잡아요.</small>
+      <small className={styles.hint}>위 눈금자를 클릭하면 그 위치로, 드래그하면 구간을 잡아요. 스페이스로 재생·정지.</small>
 
       <div className={styles.channels}>
         {channels.map((c, i) => {
@@ -314,28 +340,30 @@ export default function Mixer({ channels, comments: initialComments, canComment,
         />
       )}
 
-      <section>
-        <h3 style={{ margin: "8px 0" }}>코멘트 {sorted.length}개</h3>
+      <section className={styles.comments}>
+        <h3>코멘트 {sorted.length}</h3>
         {sorted.length === 0 ? (
-          <small>{canComment ? "구간을 잡고 코멘트를 남기면 멤버가 여기서 확인해요." : "아직 남겨진 코멘트가 없어요."}</small>
+          <small>{canComment ? "구간을 잡고 코멘트를 남기면 멤버가 자기 리포트에서 확인해요." : "아직 남겨진 코멘트가 없어요."}</small>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 6 }}>
-            {sorted.map((c) => (
-              <li key={c.id} style={{
-                padding: 8, borderRadius: 6, border: `1px solid ${selectedId === c.id ? COMMENT_COLOR : "var(--border)"}`,
-                display: "flex", gap: 8, alignItems: "flex-start",
-              }}>
-                <button type="button" onClick={() => playComment(c)} title="구간 재생">▶</button>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <small style={{ fontVariantNumeric: "tabular-nums" }}>
-                    {formatMsFine(c.startMs)}–{formatMsFine(c.endMs)}
-                    {labelBySub.size > 1 && <> · {labelBySub.get(c.submissionId)}</>}
-                  </small>
-                  <div style={{ whiteSpace: "pre-wrap" }}>{c.body}</div>
-                </div>
-                {canComment && <button type="button" onClick={() => removeComment(c.id)} title="삭제">✕</button>}
-              </li>
-            ))}
+          <ul className={styles.commentList}>
+            {sorted.map((c) => {
+              const live = playing && posMs >= c.startMs && posMs <= c.endMs;
+              return (
+                <li key={c.id} className={styles.comment} data-selected={selectedId === c.id || undefined} data-live={live || undefined}>
+                  <button type="button" className={styles.commentPlay} onClick={() => playComment(c)} aria-label="구간 재생">▶</button>
+                  <div className={styles.commentBody}>
+                    <span className={`${styles.commentMeta} mono`}>
+                      {formatMsFine(c.startMs)}–{formatMsFine(c.endMs)}
+                      {labelBySub.size > 1 && <span className={styles.commentTarget}>{labelBySub.get(c.submissionId)}</span>}
+                    </span>
+                    <p>{c.body}</p>
+                  </div>
+                  {canComment && (
+                    <button type="button" className={styles.commentDelete} onClick={() => removeComment(c.id)} aria-label="코멘트 삭제">✕</button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -477,6 +505,8 @@ function Timeline(props: {
 
   const shown = preview ?? range;
   const pct = (ms: number) => `${(ms / totalMs) * 100}%`;
+  // 1분 눈금 (0:00 제외)
+  const ticks = Array.from({ length: Math.floor(totalMs / 60000) }, (_, i) => (i + 1) * 60000);
 
   return (
     <div
@@ -511,10 +541,15 @@ function Timeline(props: {
           setPreview(null);
         } else props.onSeek(d.ms);
       }}
-      style={{ position: "relative", height: 44, background: "var(--surface-2)", borderRadius: 4, cursor: "pointer", touchAction: "none", userSelect: "none" }}
+      className={styles.ruler}
     >
+      {ticks.map((t) => (
+        <span key={t} className={styles.tick} style={{ left: pct(t) }}>
+          <span className="mono">{Math.round(t / 60000)}:00</span>
+        </span>
+      ))}
       {shown && (
-        <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(shown.startMs), width: pct(shown.endMs - shown.startMs), background: "var(--accent-soft)", borderLeft: "1px solid var(--accent)", borderRight: "1px solid var(--accent)" }} />
+        <div className={styles.laneRange} style={{ left: pct(shown.startMs), width: pct(shown.endMs - shown.startMs) }} />
       )}
       {markers.map((m) => (
         <button
@@ -523,14 +558,12 @@ function Timeline(props: {
           data-marker="1"
           title={`${formatMsFine(m.startMs)} ${m.body}`}
           onClick={() => props.onMarker(m)}
-          style={{
-            position: "absolute", top: 2, height: 8, padding: 0, border: "none", borderRadius: 2, cursor: "pointer",
-            left: pct(m.startMs), width: `max(4px, ${pct(m.endMs - m.startMs)})`,
-            background: COMMENT_COLOR, opacity: selectedId === m.id ? 1 : 0.6,
-          }}
+          className={styles.laneComment}
+          data-selected={selectedId === m.id || undefined}
+          style={{ left: pct(m.startMs), width: `max(4px, ${pct(m.endMs - m.startMs)})` }}
         />
       ))}
-      <div style={{ position: "absolute", top: 0, bottom: 0, left: pct(posMs), width: 2, background: "var(--highlight)", pointerEvents: "none" }} />
+      <div className={styles.playhead} style={{ left: pct(posMs) }} />
     </div>
   );
 }
@@ -575,9 +608,9 @@ function CommentForm(props: {
   const end = range?.endMs ?? null;
 
   return (
-    <section style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 6, display: "grid", gap: 8 }}>
-      <strong>구간 코멘트</strong>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+    <section className={styles.form}>
+      <h3>구간 코멘트 남기기</h3>
+      <div className={styles.formRow}>
         {targets.length > 1 && (
           <label>
             대상{" "}
@@ -586,20 +619,20 @@ function CommentForm(props: {
             </select>
           </label>
         )}
-        <button type="button" onClick={() => props.onRange({ startMs: Math.round(posMs), endMs: Math.max(Math.round(posMs), end ?? 0) })}>
+        <Button size="sm" onClick={() => props.onRange({ startMs: Math.round(posMs), endMs: Math.max(Math.round(posMs), end ?? 0) })}>
           시작 = 현재 위치
-        </button>
-        <button type="button" onClick={() => props.onRange({ startMs: Math.min(start ?? Math.round(posMs), Math.round(posMs)), endMs: Math.round(posMs) })}>
+        </Button>
+        <Button size="sm" onClick={() => props.onRange({ startMs: Math.min(start ?? Math.round(posMs), Math.round(posMs)), endMs: Math.round(posMs) })}>
           끝 = 현재 위치
-        </button>
-        <small style={{ fontVariantNumeric: "tabular-nums" }}>
+        </Button>
+        <small className={range ? "mono" : undefined}>
           {range ? `${formatMsFine(range.startMs)}–${formatMsFine(range.endMs)}` : "구간을 먼저 잡아 주세요"}
         </small>
       </div>
       <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="예: 여기 음이 살짝 낮아요. 끝음 반 박 더 끌어 주세요" />
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button type="button" onClick={submit} disabled={busy || !range || !body.trim()}>코멘트 남기기</button>
-        {error && <small style={{ color: "var(--danger)" }}>에러: {error}</small>}
+      <div className={styles.formRow}>
+        <Button variant="primary" size="sm" onClick={submit} disabled={busy || !range || !body.trim()}>코멘트 남기기</Button>
+        {error && <small className={styles.error}>에러: {error}</small>}
       </div>
     </section>
   );
