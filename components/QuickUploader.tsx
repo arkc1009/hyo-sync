@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BLOB_ACCESS } from "@/lib/blob";
+import { peaksFromFile } from "@/lib/mix/peaks-browser";
 
 type Target =
   /** 담당자 INST */
@@ -12,6 +13,7 @@ type Target =
 
 type Status =
   | { kind: "idle" }
+  | { kind: "prepare" }
   | { kind: "upload"; mb: string }
   | { kind: "save" }
   | { kind: "error"; message: string };
@@ -25,13 +27,15 @@ export default function QuickUploader({ target }: { target: Target }) {
   const [partId, setPartId] = useState(parts[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const busy = status.kind === "upload" || status.kind === "save";
+  const busy = status.kind === "prepare" || status.kind === "upload" || status.kind === "save";
   const ready = !!file && (target.kind === "inst" || !!partId);
 
   async function run() {
     if (!file || !ready) return;
     try {
+      setStatus({ kind: "prepare" });
       const durationMs = await readDurationMs(file);
+      const peaks = await peaksFromFile(file);
       setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
       // 경로 ASCII·멀티파트 기준, private access, 진행률 콜백 없음은 TrackUploader 와 같다.
@@ -52,8 +56,8 @@ export default function QuickUploader({ target }: { target: Target }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
           target.kind === "inst"
-            ? { projectId: target.projectId, blobUrl: blob.url, durationMs }
-            : { partId, blobUrl: blob.url, durationMs, mixOnly: true },
+            ? { projectId: target.projectId, blobUrl: blob.url, durationMs, peaks }
+            : { partId, blobUrl: blob.url, durationMs, mixOnly: true, peaks },
         ),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -79,6 +83,7 @@ export default function QuickUploader({ target }: { target: Target }) {
       )}
       <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       <button type="button" onClick={run} disabled={busy || !ready}>{target.kind === "inst" ? "INST 업로드" : "트랙 올리기"}</button>
+      {status.kind === "prepare" && <small>파형 만드는 중…</small>}
       {status.kind === "upload" && <small>업로드 중… ({status.mb} MB)</small>}
       {status.kind === "save" && <small>저장 중…</small>}
       {status.kind === "error" && <small style={{ color: "var(--danger)" }}>에러: {status.message}</small>}

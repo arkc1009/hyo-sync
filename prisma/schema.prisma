@@ -105,6 +105,8 @@ model Submission {
   /// MIX_ONLY 면 null
   pitch      Json?
   status     SubmissionStatus @default(UPLOADED)
+  /// 믹서 파형용 피크 (lib/mix/peaks.ts). 옛 트랙은 null → 브라우저가 처음 열 때 계산해 채운다
+  peaks      Json?
   createdAt  DateTime         @default(now())
 
   part     Part           @relation(fields: [partId], references: [id], onDelete: Cascade)
@@ -136,6 +138,8 @@ model Instrumental {
   projectId    String
   blobUrl      String
   durationMs   Int
+  /// 믹서 파형용 피크 (lib/mix/peaks.ts)
+  peaks        Json?
   uploadedById String
   createdAt    DateTime @default(now())
 

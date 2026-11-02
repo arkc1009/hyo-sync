@@ -5,6 +5,7 @@ import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { projectForUser, visibleSubmissionsWhere } from "@/lib/access";
 import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
+import { validatePeaks } from "@/lib/mix/peaks";
 import { latestTakes } from "@/lib/mix";
 import { requireUser } from "@/lib/session";
 import styles from "./page.module.css";
@@ -35,11 +36,13 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
 
   const subs = latestTakes(parts.flatMap((p) => p.submissions.map((s) => ({ ...s, partName: p.name }))));
   const channels: MixChannel[] = [
-    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), durationMs: inst.durationMs }] : []),
+    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), blobUrl: inst.blobUrl, peaks: validatePeaks(inst.peaks), durationMs: inst.durationMs }] : []),
     ...subs.map((s) => ({
       id: s.id,
       label: `${s.partName} · ${s.userId === user.id ? "나" : (s.user.name ?? s.user.email)} · T${s.take}`,
       url: audioSrc(s.blobUrl),
+      blobUrl: s.blobUrl,
+      peaks: validatePeaks(s.peaks),
       durationMs: s.durationMs,
       submissionId: s.id,
     })),

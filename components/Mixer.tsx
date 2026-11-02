@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { formatMsFine } from "@/lib/format";
 import { channelGains, COMMENT_PREROLL_MS, needsResync, type ChannelState } from "@/lib/mix";
+import { backfillPeaks } from "@/lib/mix/peaks-browser";
+import styles from "./Mixer.module.css";
 
 export interface MixChannel {
   id: string;
@@ -11,6 +13,10 @@ export interface MixChannel {
   durationMs: number;
   /** 녹음본이면 제출 id. INST 는 없음 */
   submissionId?: string;
+  /** 원본 Blob 주소. 피크가 없을 때 브라우저에서 계산해 저장할 때 쓴다 */
+  blobUrl: string;
+  /** 파형 피크 (lib/mix/peaks.ts). null 이면 처음 열 때 계산 */
+  peaks: number[] | null;
 }
 
 export interface MixComment {
@@ -49,19 +55,36 @@ export default function Mixer({ channels, comments: initialComments, canComment 
   const [comments, setComments] = useState(initialComments);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const [peaks, setPeaks] = useState(() => new Map(channels.map((c) => [c.id, c.peaks])));
+
+  // 피크 없는 옛 트랙: 하나씩 받아 계산하고 서버에 채워 둔다 (다음부터는 바로 보임)
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      for (const c of channels) {
+        if (c.peaks || cancelled) continue;
+        const p = await backfillPeaks(c.blobUrl, c.url);
+        // 실패하면 빈 배열 → 파형 없이 가는 선만
+        if (!cancelled) setPeaks((m) => new Map(m).set(c.id, p ?? []));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [channels]);
+
   const totalMs = useMemo(() => Math.max(1, ...channels.map((c) => c.durationMs)), [channels]);
   const masterIdx = useMemo(() => channels.reduce((best, c, i) => (c.durationMs > channels[best].durationMs ? i : best), 0), [channels]);
   const labelBySub = useMemo(() => new Map(channels.filter((c) => c.submissionId).map((c) => [c.submissionId!, c.label])), [channels]);
 
+  const gains = useMemo(() => channelGains(states), [states]);
+
   // 볼륨·뮤트·솔로 반영
   useEffect(() => {
-    const gains = channelGains(states);
     els.current.forEach((el, i) => {
       if (!el) return;
       el.volume = gains[i];
       el.muted = gains[i] === 0;
     });
-  }, [states]);
+  }, [gains]);
 
   const pauseAll = useCallback(() => {
     els.current.forEach((el) => el?.pause());
@@ -177,38 +200,40 @@ export default function Mixer({ channels, comments: initialComments, canComment 
       />
       <small style={{ opacity: 0.7 }}>타임라인을 클릭하면 그 위치로, 드래그하면 구간을 잡아요.</small>
 
-      <div style={{ display: "grid", gap: 6 }}>
+      <div className={styles.channels}>
         {channels.map((c, i) => {
           const s = states[i];
           const own = c.submissionId ? sorted.filter((m) => m.submissionId === c.submissionId) : [];
+          const silent = gains[i] === 0;
           return (
-            <div key={c.id} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 220px) 1fr", gap: 8, alignItems: "center" }}>
-              <div style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
-                <button type="button" onClick={() => update(i, { muted: !s.muted })} aria-pressed={s.muted} title="뮤트"
-                  style={{ fontWeight: s.muted ? 700 : 400, opacity: s.muted ? 1 : 0.6 }}>M</button>
-                <button type="button" onClick={() => update(i, { solo: !s.solo })} aria-pressed={s.solo} title="솔로"
-                  style={{ fontWeight: s.solo ? 700 : 400, opacity: s.solo ? 1 : 0.6 }}>S</button>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.label}>{c.label}</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input type="range" min={0} max={100} value={Math.round(s.volume * 100)} aria-label={`${c.label} 볼륨`}
-                  onChange={(e) => update(i, { volume: Number(e.target.value) / 100 })} style={{ width: 120 }} />
-                <small style={{ width: 32, fontVariantNumeric: "tabular-nums" }}>{Math.round(s.volume * 100)}</small>
-                {/* 채널별 코멘트 위치 */}
-                <div style={{ position: "relative", flex: 1, height: 10, background: "var(--surface-2)", borderRadius: 2 }}>
-                  {c.durationMs < totalMs && (
-                    <div style={{ position: "absolute", top: 0, bottom: 0, left: `${(c.durationMs / totalMs) * 100}%`, right: 0, background: "var(--surface-3)" }} />
-                  )}
-                  {own.map((m) => (
-                    <button key={m.id} type="button" title={m.body} onClick={() => playComment(m)}
-                      style={{
-                        position: "absolute", top: 0, bottom: 0, padding: 0, border: "none", cursor: "pointer", borderRadius: 2,
-                        left: `${(m.startMs / totalMs) * 100}%`, width: `${Math.max(0.4, ((m.endMs - m.startMs) / totalMs) * 100)}%`,
-                        background: COMMENT_COLOR, opacity: selectedId === m.id ? 1 : 0.6,
-                      }} />
-                  ))}
+            <div key={c.id} className={styles.channel}>
+              <div className={styles.strip}>
+                <span className={styles.label} title={c.label}>{c.label}</span>
+                <div className={styles.controls}>
+                  <button type="button" className={styles.toggle} data-on={s.muted || undefined} data-kind="mute"
+                    onClick={() => update(i, { muted: !s.muted })} aria-pressed={s.muted} title="뮤트">M</button>
+                  <button type="button" className={styles.toggle} data-on={s.solo || undefined} data-kind="solo"
+                    onClick={() => update(i, { solo: !s.solo })} aria-pressed={s.solo} title="솔로">S</button>
+                  <input type="range" min={0} max={100} value={Math.round(s.volume * 100)} aria-label={`${c.label} 볼륨`}
+                    className={styles.volume} onChange={(e) => update(i, { volume: Number(e.target.value) / 100 })} />
+                  <small className={`${styles.volumeValue} mono`}>{Math.round(s.volume * 100)}</small>
                 </div>
               </div>
+              <Lane
+                peaks={peaks.get(c.id) ?? null}
+                widthPct={(c.durationMs / totalMs) * 100}
+                posPct={(posMs / totalMs) * 100}
+                range={range && { left: (range.startMs / totalMs) * 100, width: ((range.endMs - range.startMs) / totalMs) * 100 }}
+                silent={silent}
+                label={c.label}
+                onSeek={(ratio) => seek(Math.round(ratio * totalMs))}
+              >
+                {own.map((m) => (
+                  <button key={m.id} type="button" title={m.body} onClick={(e) => { e.stopPropagation(); playComment(m); }}
+                    className={styles.laneComment} data-selected={selectedId === m.id || undefined}
+                    style={{ left: `${(m.startMs / totalMs) * 100}%`, width: `max(4px, ${((m.endMs - m.startMs) / totalMs) * 100}%)` }} />
+                ))}
+              </Lane>
             </div>
           );
         })}
@@ -250,6 +275,62 @@ export default function Mixer({ channels, comments: initialComments, canComment 
         )}
       </section>
     </div>
+  );
+}
+
+/** 채널 한 줄: 파형 + 재생된 부분 강조 + 선택 구간 + 재생 헤드. 클릭하면 그 위치로 */
+function Lane(props: {
+  peaks: number[] | null;
+  /** 이 채널 길이가 전체 타임라인에서 차지하는 비율(%) */
+  widthPct: number;
+  posPct: number;
+  range: { left: number; width: number } | null;
+  silent: boolean;
+  label: string;
+  onSeek: (ratio: number) => void;
+  children?: ReactNode;
+}) {
+  const { peaks, widthPct, posPct, range } = props;
+  // 파형 영역 기준 재생 진행률
+  const played = Math.max(0, Math.min(100, (posPct / widthPct) * 100));
+  return (
+    <div
+      className={styles.lane}
+      data-silent={props.silent || undefined}
+      aria-label={`${props.label} 파형`}
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        props.onSeek(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
+      }}
+    >
+      {range && <div className={styles.laneRange} style={{ left: `${range.left}%`, width: `${range.width}%` }} />}
+      <div className={styles.wave} style={{ width: `${widthPct}%` }}>
+        {peaks?.length ? (
+          <>
+            <WavePath peaks={peaks} className={styles.waveBase} />
+            <WavePath peaks={peaks} className={styles.wavePlayed} style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }} />
+          </>
+        ) : (
+          <div className={peaks ? styles.waveFlat : styles.wavePending} />
+        )}
+      </div>
+      {props.children}
+      <div className={styles.playhead} style={{ left: `${posPct}%` }} />
+    </div>
+  );
+}
+
+/** 위아래 대칭 파형. viewBox 를 피크 수에 맞추고 가로로 늘린다 */
+function WavePath({ peaks, className, style }: { peaks: number[]; className: string; style?: CSSProperties }) {
+  const d = useMemo(() => {
+    const top = peaks.map((p, i) => `${i + 0.5},${(50 - Math.max(p, 0.01) * 48).toFixed(1)}`);
+    const bottom = peaks.map((p, i) => `${i + 0.5},${(50 + Math.max(p, 0.01) * 48).toFixed(1)}`).reverse();
+    return `M0,50 L${top.join(" L")} L${peaks.length},50 L${bottom.join(" L")} Z`;
+  }, [peaks]);
+  return (
+    <svg className={className} style={style} viewBox={`0 0 ${peaks.length} 100`} preserveAspectRatio="none" aria-hidden>
+      <path d={d} />
+    </svg>
   );
 }
 

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BLOB_ACCESS } from "@/lib/blob";
+import { peaksFromFile } from "@/lib/mix/peaks-browser";
 import type { ExtractProgress } from "@/lib/pitch";
 
 interface Props {
@@ -44,6 +45,8 @@ export default function TrackUploader({ parts, kind }: Props) {
       const { extractPitch } = await import("@/lib/pitch");
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
       const extractMs = performance.now() - t0;
+      // 믹서 파형용. 가이드는 믹서에 안 나와서 녹음본만
+      const peaks = kind === "submission" ? await peaksFromFile(file) : null;
 
       setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
@@ -65,7 +68,7 @@ export default function TrackUploader({ parts, kind }: Props) {
       const res = await fetch(ENDPOINT[kind], {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track, extractMs: Math.round(extractMs) }),
+        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track, extractMs: Math.round(extractMs), peaks }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok) throw new Error(json.error ?? res.statusText);

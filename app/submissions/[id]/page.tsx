@@ -9,6 +9,7 @@ import type { PhraseResult, ReportSummary, Verdict } from "@/lib/analysis/types"
 import { VERDICT_COLOR } from "@/lib/labels";
 import { audioSrc } from "@/lib/blob";
 import { prisma } from "@/lib/db";
+import { validatePeaks } from "@/lib/mix/peaks";
 import { formatMs, formatOffset } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 import styles from "./page.module.css";
@@ -33,8 +34,8 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
   const mixOnly = sub.status === "MIX_ONLY";
   const inst = await prisma.instrumental.findFirst({ where: { projectId: sub.part.project.id }, orderBy: { createdAt: "desc" } });
   const channels: MixChannel[] = [
-    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), durationMs: inst.durationMs }] : []),
-    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: audioSrc(sub.blobUrl), durationMs: sub.durationMs, submissionId: sub.id },
+    ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), blobUrl: inst.blobUrl, peaks: validatePeaks(inst.peaks), durationMs: inst.durationMs }] : []),
+    { id: sub.id, label: sub.userId === user.id ? "내 녹음" : `${who} 녹음`, url: audioSrc(sub.blobUrl), blobUrl: sub.blobUrl, peaks: validatePeaks(sub.peaks), durationMs: sub.durationMs, submissionId: sub.id },
   ];
   const comments = sub.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() }));
 
