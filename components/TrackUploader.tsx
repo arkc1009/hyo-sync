@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BLOB_ACCESS } from "@/lib/blob";
+import { Button, FileDrop, Notice, UploadSteps, type UploadStep } from "@/components/ui";
+import { peaksFromFile } from "@/lib/mix/peaks-browser";
 import type { ExtractProgress } from "@/lib/pitch";
+import styles from "./Uploader.module.css";
 
 interface Props {
   parts: { id: string; name: string }[];
@@ -44,6 +47,8 @@ export default function TrackUploader({ parts, kind }: Props) {
       const { extractPitch } = await import("@/lib/pitch");
       const { track, durationMs } = await extractPitch(file, (progress) => setStatus({ kind: "extract", progress }));
       const extractMs = performance.now() - t0;
+      // 믹서·리포트 파형용
+      const peaks = await peaksFromFile(file);
 
       setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
@@ -65,7 +70,7 @@ export default function TrackUploader({ parts, kind }: Props) {
       const res = await fetch(ENDPOINT[kind], {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track, extractMs: Math.round(extractMs) }),
+        body: JSON.stringify({ partId, blobUrl: blob.url, durationMs, pitch: track, extractMs: Math.round(extractMs), peaks }),
       });
       const json = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok) throw new Error(json.error ?? res.statusText);
@@ -79,21 +84,37 @@ export default function TrackUploader({ parts, kind }: Props) {
     }
   }
 
+  const steps: UploadStep[] = [
+    {
+      label: "피치 추출",
+      detail: status.kind === "extract" ? STAGE_LABEL[status.progress.stage] : undefined,
+      progress: status.kind === "extract" && status.progress.stage === "pitch" ? status.progress.value : undefined,
+    },
+    { label: "업로드", detail: status.kind === "upload" ? `${status.mb}MB` : undefined },
+    { label: kind === "submission" ? "분석" : "저장" },
+  ];
+  const current = { extract: 0, upload: 1, save: 2, done: 3 }[status.kind as "extract" | "upload" | "save" | "done"] ?? -1;
+
   return (
-    <div style={{ display: "grid", gap: 8, maxWidth: 480 }}>
-      <label>
-        파트{" "}
-        <select value={partId} onChange={(e) => setPartId(e.target.value)} disabled={busy}>
-          {parts.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </label>
-      <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      <button type="button" onClick={run} disabled={busy || !file || !partId}>
-        {BUTTON[kind]}
-      </button>
-      <StatusLine status={status} />
+    <div className={styles.form}>
+      {parts.length > 1 && (
+        <label className={styles.field}>
+          <span>파트</span>
+          <select value={partId} onChange={(e) => setPartId(e.target.value)} disabled={busy}>
+            {parts.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <FileDrop file={file} onFile={setFile} disabled={busy} />
+      {current >= 0 && <UploadSteps steps={steps} current={current} />}
+      {status.kind === "error" && <Notice tone="error">{status.message}</Notice>}
+      <div>
+        <Button variant="primary" onClick={run} disabled={busy || !file || !partId}>
+          {BUTTON[kind]}{parts.length === 1 ? ` · ${parts[0].name}` : ""}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -102,18 +123,4 @@ export default function TrackUploader({ parts, kind }: Props) {
 function safeExt(name: string) {
   const m = /\.([a-z0-9]{1,5})$/i.exec(name);
   return m ? m[1].toLowerCase() : "bin";
-}
-
-function StatusLine({ status }: { status: Status }) {
-  switch (status.kind) {
-    case "idle": return null;
-    case "extract": {
-      const { stage, value } = status.progress;
-      return <small>{STAGE_LABEL[stage]}{stage === "pitch" ? ` ${Math.round(value * 100)}%` : "…"}</small>;
-    }
-    case "upload": return <small>업로드 중… ({status.mb}MB)</small>;
-    case "save": return <small>저장·분석 중…</small>;
-    case "done": return <small>완료</small>;
-    case "error": return <small style={{ color: "crimson" }}>에러: {status.message}</small>;
-  }
 }

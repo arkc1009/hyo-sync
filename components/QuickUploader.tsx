@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { BLOB_ACCESS } from "@/lib/blob";
+import { Button, FileDrop, Notice, UploadSteps, type UploadStep } from "@/components/ui";
+import { peaksFromFile } from "@/lib/mix/peaks-browser";
+import styles from "./Uploader.module.css";
 
 type Target =
   /** 담당자 INST */
@@ -12,6 +15,7 @@ type Target =
 
 type Status =
   | { kind: "idle" }
+  | { kind: "prepare" }
   | { kind: "upload"; mb: string }
   | { kind: "save" }
   | { kind: "error"; message: string };
@@ -25,13 +29,15 @@ export default function QuickUploader({ target }: { target: Target }) {
   const [partId, setPartId] = useState(parts[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
-  const busy = status.kind === "upload" || status.kind === "save";
+  const busy = status.kind === "prepare" || status.kind === "upload" || status.kind === "save";
   const ready = !!file && (target.kind === "inst" || !!partId);
 
   async function run() {
     if (!file || !ready) return;
     try {
+      setStatus({ kind: "prepare" });
       const durationMs = await readDurationMs(file);
+      const peaks = await peaksFromFile(file);
       setStatus({ kind: "upload", mb: (file.size / 1024 / 1024).toFixed(1) });
       const { upload } = await import("@vercel/blob/client");
       // 경로 ASCII·멀티파트 기준, private access, 진행률 콜백 없음은 TrackUploader 와 같다.
@@ -52,8 +58,8 @@ export default function QuickUploader({ target }: { target: Target }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
           target.kind === "inst"
-            ? { projectId: target.projectId, blobUrl: blob.url, durationMs }
-            : { partId, blobUrl: blob.url, durationMs, mixOnly: true },
+            ? { projectId: target.projectId, blobUrl: blob.url, durationMs, peaks }
+            : { partId, blobUrl: blob.url, durationMs, mixOnly: true, peaks },
         ),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -67,21 +73,31 @@ export default function QuickUploader({ target }: { target: Target }) {
     }
   }
 
+  const steps: UploadStep[] = [
+    { label: "파형 만들기" },
+    { label: "업로드", detail: status.kind === "upload" ? `${status.mb}MB` : undefined },
+    { label: "저장" },
+  ];
+  const current = { prepare: 0, upload: 1, save: 2 }[status.kind as "prepare" | "upload" | "save"] ?? -1;
+
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      {target.kind === "track" && (
-        <label>
-          파트{" "}
+    <div className={styles.form}>
+      {target.kind === "track" && parts.length > 1 && (
+        <label className={styles.field}>
+          <span>파트</span>
           <select value={partId} onChange={(e) => setPartId(e.target.value)} disabled={busy}>
             {parts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
       )}
-      <input type="file" accept="audio/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      <button type="button" onClick={run} disabled={busy || !ready}>{target.kind === "inst" ? "INST 업로드" : "트랙 올리기"}</button>
-      {status.kind === "upload" && <small>업로드 중… ({status.mb} MB)</small>}
-      {status.kind === "save" && <small>저장 중…</small>}
-      {status.kind === "error" && <small style={{ color: "crimson" }}>에러: {status.message}</small>}
+      <FileDrop file={file} onFile={setFile} disabled={busy} />
+      {current >= 0 && <UploadSteps steps={steps} current={current} />}
+      {status.kind === "error" && <Notice tone="error">{status.message}</Notice>}
+      <div>
+        <Button variant="primary" onClick={run} disabled={busy || !ready}>
+          {target.kind === "inst" ? "INST 업로드" : `트랙 올리기${parts.length === 1 ? ` · ${parts[0].name}` : ""}`}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,11 @@
+.notice {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+}
+.info { background: var(--accent-soft); border-color: var(--accent-soft); }
+.warning { background: var(--fixable-soft); border-color: var(--fixable-soft); }
+.error { background: var(--rerecord-soft); border-color: var(--rerecord-soft); color: var(--rerecord); }
