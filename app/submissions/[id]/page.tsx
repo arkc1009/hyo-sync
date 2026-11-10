@@ -10,6 +10,7 @@ import { prisma } from "@/lib/db";
 import { formatMs, formatOffset } from "@/lib/format";
 import { VERDICT_COLOR } from "@/lib/labels";
 import { validatePeaks } from "@/lib/mix/peaks";
+import { formatSyncOffset } from "@/lib/mix/sync";
 import { requireUser } from "@/lib/session";
 import styles from "./page.module.css";
 
@@ -20,9 +21,15 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
 
   const sub = await prisma.submission.findFirst({
     where: submissionWhereForUser(id, user.id),
+    omit: { pitch: true },
     include: {
       user: { select: { name: true, email: true } },
-      part: { include: { project: { select: { id: true, title: true, ownerId: true } } } },
+      part: {
+        include: {
+          project: { select: { id: true, title: true, ownerId: true } },
+          guideTracks: { orderBy: { createdAt: "desc" }, take: 1, select: { blobUrl: true } },
+        },
+      },
       comments: { orderBy: { startMs: "asc" }, select: { id: true, submissionId: true, startMs: true, endMs: true, body: true, createdAt: true } },
       report: { include: { guideTrack: { select: { blobUrl: true, durationMs: true, peaks: true } } } },
     },
@@ -47,6 +54,18 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
       durationMs: sub.durationMs,
       submissionId: sub.id,
       role: "mine",
+      offsetMs: sub.syncOffsetMs,
+      sync: {
+        editable: mine || isOwner,
+        savedMs: sub.syncOffsetMs,
+        autoMs: sub.syncAutoMs,
+        confidence: sub.syncConfidence,
+        detect: !mixOnly
+          ? { kind: "server" }
+          : sub.part.guideTracks[0]
+            ? { kind: "client", guideSrc: audioSrc(sub.part.guideTracks[0].blobUrl) }
+            : null,
+      },
     },
     ...(report
       ? [{
@@ -86,6 +105,7 @@ export default async function SubmissionPage({ params }: PageProps<"/submissions
 
       <div className={styles.stack}>
         {report && <Summary summary={report.summary as unknown as ReportSummary} globalOffsetMs={report.globalOffsetMs} />}
+        {sub.syncConfidence != null && <SyncNotice offsetMs={sub.syncOffsetMs} autoMs={sub.syncAutoMs} />}
         {!mixOnly && !report && <Notice tone="error">자동 분석에 실패했어요. 다시 제출해 보세요. 담당자 코멘트는 아래에서 볼 수 있어요.</Notice>}
 
         <Card
@@ -118,7 +138,7 @@ function Summary({ summary, globalOffsetMs }: { summary: ReportSummary; globalOf
       </div>
       {notice && (
         <Notice tone="warning">
-          전체적으로 <strong>{formatOffset(globalOffsetMs)}</strong>. 시작점이 밀린 채 녹음됐을 수 있어요. 가이드와 시작을 맞춰서 다시 올리면 타이밍 판정이 정확해져요.
+          전체적으로 <strong>{formatOffset(globalOffsetMs)}</strong>. 시작 싱크를 맞춘 뒤에도 전체가 밀려 있어요. 아래 타임라인의 &lsquo;싱크&rsquo;에서 조정하면 다시 판정해요.
         </Notice>
       )}
     </div>
@@ -131,5 +151,22 @@ function Stat({ label, value, verdict }: { label: string; value: number; verdict
       <span className={`${styles.statValue} mono`}>{value}</span>
       <span className={styles.statLabel}>{label}</span>
     </div>
+  );
+}
+
+/** 시작 싱크 안내. 자동으로 맞췄으면 얼마나 옮겼는지, 못 찾았으면 직접 조정 안내 */
+function SyncNotice({ offsetMs, autoMs }: { offsetMs: number; autoMs: number | null }) {
+  if (autoMs == null && offsetMs === 0) {
+    return (
+      <Notice tone="warning">
+        가이드와 시작점을 자동으로 맞추지 못했어요. 아래 타임라인의 &lsquo;싱크&rsquo;에서 직접 조정할 수 있어요.
+      </Notice>
+    );
+  }
+  if (offsetMs === 0) return null;
+  return (
+    <Notice tone="info">
+      시작점이 가이드와 <strong className="mono">{formatSyncOffset(offsetMs)}</strong> 어긋나 있어서 {offsetMs === autoMs ? "자동으로" : "직접 조정한 값으로"} 맞춘 뒤 비교·재생해요.
+    </Notice>
   );
 }

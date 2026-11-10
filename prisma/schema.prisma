@@ -98,18 +98,24 @@ model GuideTrack {
 }
 
 model Submission {
-  id         String           @id @default(cuid())
-  partId     String
-  userId     String
-  blobUrl    String
-  durationMs Int
-  take       Int              @default(1)
+  id             String           @id @default(cuid())
+  partId         String
+  userId         String
+  blobUrl        String
+  durationMs     Int
+  take           Int              @default(1)
   /// MIX_ONLY 면 null
-  pitch      Json?
-  status     SubmissionStatus @default(UPLOADED)
+  pitch          Json?
+  status         SubmissionStatus @default(UPLOADED)
   /// 믹서 파형용 피크 (lib/mix/peaks.ts). 옛 트랙은 null → 브라우저가 처음 열 때 계산해 채운다
-  peaks      Json?
-  createdAt  DateTime         @default(now())
+  peaks          Json?
+  /// 시작 싱크: 녹음본 시각 − 가이드(= INST) 시각 (lib/analysis/sync.ts). 믹서 재생과 compare 에 적용. 직접 조정하면 이 값만 바뀐다
+  syncOffsetMs   Int              @default(0)
+  /// 자동으로 찾은 오프셋. 신뢰도가 낮았으면 null
+  syncAutoMs     Int?
+  /// 자동 탐색 신뢰도 0~1. null 이면 자동 탐색을 안 했다 (옛 트랙, 가이드 없음)
+  syncConfidence Float?
+  createdAt      DateTime         @default(now())
 
   part     Part           @relation(fields: [partId], references: [id], onDelete: Cascade)
   user     User           @relation(fields: [userId], references: [id])
@@ -151,7 +157,7 @@ model Instrumental {
   @@index([projectId, createdAt])
 }
 
-/// 담당자가 녹음본의 특정 구간에 남기는 피드백. 시간은 녹음본(= INST, 싱크 가정) 기준 ms
+/// 담당자가 녹음본의 특정 구간에 남기는 피드백. 시간은 믹서 타임라인(= INST·가이드) 기준 ms. 녹음본 시각은 + syncOffsetMs
 model TrackComment {
   id           String   @id @default(cuid())
   submissionId String

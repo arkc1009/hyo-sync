@@ -1,5 +1,6 @@
 import { dtw } from "./dtw";
 import { segmentPhrases } from "./phrases";
+import { shiftPitchTrack } from "./sync";
 import { DTW, THRESHOLDS, THRESHOLDS_VERSION } from "./thresholds";
 import type { PhraseResult, PitchTrack, Reason, Report, ReportSummary, Verdict } from "./types";
 
@@ -39,10 +40,13 @@ export function judgePhrase(
 /**
  * 가이드 vs 녹음본. 두 트랙의 hopMs 는 같아야 한다.
  * SPEC "파이프라인 C" 참고.
+ * syncOffsetMs (lib/analysis/sync.ts 규약) 만큼 녹음본을 옮긴 뒤 비교한다. 결과의 subStartMs/subEndMs 는 원래 녹음본 시각
  */
-export function compare(guide: PitchTrack, sub: PitchTrack): Report {
-  if (guide.hopMs !== sub.hopMs) throw new Error(`hopMs 불일치: guide ${guide.hopMs}, sub ${sub.hopMs}`);
+export function compare(guide: PitchTrack, original: PitchTrack, syncOffsetMs = 0): Report {
+  if (guide.hopMs !== original.hopMs) throw new Error(`hopMs 불일치: guide ${guide.hopMs}, sub ${original.hopMs}`);
   const hop = guide.hopMs;
+  const sub = shiftPitchTrack(original, syncOffsetMs);
+  const shiftMs = Math.round(syncOffsetMs / hop) * hop;
   const band = Math.round(DTW.bandMs / hop);
   const path = dtw(guide.f0Cents, sub.f0Cents, band, DTW.unvoicedPenaltyCents);
   const phrases = segmentPhrases(guide);
@@ -74,8 +78,8 @@ export function compare(guide: PitchTrack, sub: PitchTrack): Report {
       index: ph.index,
       guideStartMs: ph.startFrame * hop,
       guideEndMs: ph.endFrame * hop,
-      subStartMs: subStart * hop,
-      subEndMs: subEnd * hop,
+      subStartMs: subStart * hop + shiftMs,
+      subEndMs: subEnd * hop + shiftMs,
       pitch: { medianCents: round1(pitchMedian), meanAbsCents: round1(meanAbs) },
       timing: { onsetMs: Math.round(onsetMs), medianMs: Math.round(median(offsets)) },
       coverage: round3(coverage),

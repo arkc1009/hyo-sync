@@ -15,10 +15,12 @@ interface Props {
   onPlay: (p: PhraseResult, role: "mine" | "guide") => void;
   onPlayMix: (p: PhraseResult) => void;
   onStop: () => void;
+  /** 녹음본 시작 싱크. 표시 시각을 믹서 타임라인(가이드 기준)으로 맞춘다 */
+  offsetMs?: number;
 }
 
 /** 리포트 소절 목록. 기본은 다시 볼 소절(재녹음·보정)만, 고르면 가이드/내 녹음 A/B 재생 */
-export default function PhraseList({ phrases, selected, playing, onSelect, onPlay, onPlayMix, onStop }: Props) {
+export default function PhraseList({ phrases, selected, playing, onSelect, onPlay, onPlayMix, onStop, offsetMs = 0 }: Props) {
   const issues = phrases.filter((p) => p.verdict === "RERECORD" || p.verdict === "FIXABLE");
   const [tab, setTab] = useState<"issues" | "all">(issues.length > 0 ? "issues" : "all");
   const shown = tab === "issues" ? issues : phrases;
@@ -47,7 +49,7 @@ export default function PhraseList({ phrases, selected, playing, onSelect, onPla
             return (
               <li key={p.index} className={styles.row} data-selected={isSel || undefined} onClick={() => onSelect(p)}>
                 <span className={`${styles.num} mono`}>{p.index + 1}</span>
-                <span className={`${styles.time} mono`}>{formatMsFine(p.subStartMs)}–{formatMsFine(p.subEndMs)}</span>
+                <span className={`${styles.time} mono`}>{formatMsFine(Math.max(0, p.subStartMs - offsetMs))}–{formatMsFine(Math.max(0, p.subEndMs - offsetMs))}</span>
                 <span><Badge tone={VERDICT_TONE[p.verdict]} dot>{VERDICT_LABEL[p.verdict]}</Badge></span>
                 <span className={styles.detail}>
                   {reliable && <span>음정 <strong className="mono">{formatCents(p.pitch.medianCents)}</strong></span>}

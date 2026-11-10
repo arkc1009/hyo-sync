@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Mixer, { type MixChannel } from "@/components/Mixer";
 import QuickUploader from "@/components/QuickUploader";
+import type { SyncInfo } from "@/components/SyncControl";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { projectForUser, visibleSubmissionsWhere } from "@/lib/access";
 import { audioSrc } from "@/lib/blob";
@@ -23,9 +24,12 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
     where: { projectId: id },
     orderBy: { order: "asc" },
     include: {
+      guideTracks: { orderBy: { createdAt: "desc" }, take: 1, select: { blobUrl: true } },
       submissions: {
         where: visibleSubmissionsWhere(project, user.id),
         orderBy: [{ userId: "asc" }, { take: "desc" }],
+        // 피치 곡선(수백 KB)은 믹서에 필요 없다
+        omit: { pitch: true },
         include: {
           user: { select: { name: true, email: true } },
           comments: { orderBy: { startMs: "asc" }, select: { id: true, submissionId: true, startMs: true, endMs: true, body: true, createdAt: true } },
@@ -34,7 +38,7 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
     },
   });
 
-  const subs = latestTakes(parts.flatMap((p) => p.submissions.map((s) => ({ ...s, partName: p.name }))));
+  const subs = latestTakes(parts.flatMap((p) => p.submissions.map((s) => ({ ...s, partName: p.name, guide: p.guideTracks[0] ?? null }))));
   const channels: MixChannel[] = [
     ...(inst ? [{ id: `inst-${inst.id}`, label: "INST", url: audioSrc(inst.blobUrl), blobUrl: inst.blobUrl, peaks: validatePeaks(inst.peaks), durationMs: inst.durationMs }] : []),
     ...subs.map((s) => ({
@@ -45,6 +49,14 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
       peaks: validatePeaks(s.peaks),
       durationMs: s.durationMs,
       submissionId: s.id,
+      offsetMs: s.syncOffsetMs,
+      sync: {
+        editable: isOwner || s.userId === user.id,
+        savedMs: s.syncOffsetMs,
+        autoMs: s.syncAutoMs,
+        confidence: s.syncConfidence,
+        detect: syncDetect(s.status, s.guide?.blobUrl),
+      },
     })),
   ];
   const comments = subs.flatMap((s) => s.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })));
@@ -56,7 +68,7 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
         title="믹서"
         meta={
           <>
-            {inst ? "INST와 " : "INST 없이 "}파트·멤버별 최신 테이크를 같이 재생해요. 멤버가 시작점을 맞춰 올렸다고 가정해요.
+            {inst ? "INST와 " : "INST 없이 "}파트·멤버별 최신 테이크를 같이 재생해요. 녹음본 시작점은 가이드에 자동으로 맞추고, 채널의 &lsquo;싱크&rsquo;에서 직접 조정할 수 있어요.
             {isOwner && " 구간을 잡고 대상 트랙을 골라 코멘트를 남기면 멤버가 자기 제출 페이지에서 봐요."}
           </>
         }
@@ -70,11 +82,22 @@ export default async function MixPage({ params }: PageProps<"/projects/[id]/mix"
           </Card>
         )}
         {parts.length > 0 && (
-          <Card title="트랙 올리기" description="INST와 시작점을 맞춘 녹음본. 가이드 비교 없이 바로 믹서에 올라가요.">
-            <QuickUploader target={{ kind: "track", parts: parts.map((p) => ({ id: p.id, name: p.name })) }} />
+          <Card title="트랙 올리기" description="가이드 비교 없이 바로 믹서에 올라가요. 파트에 가이드가 있으면 시작점을 가이드에 자동으로 맞춰요.">
+            <QuickUploader
+              target={{
+                kind: "track",
+                parts: parts.map((p) => ({ id: p.id, name: p.name, guideSrc: p.guideTracks[0] ? audioSrc(p.guideTracks[0].blobUrl) : null })),
+              }}
+            />
           </Card>
         )}
       </div>
     </>
   );
+}
+
+/** 자동 싱크 방법: 피치가 있는 제출은 서버, 믹스용 트랙은 가이드 파일과 브라우저에서 비교 */
+function syncDetect(status: string, guideBlobUrl: string | undefined): SyncInfo["detect"] {
+  if (status !== "MIX_ONLY") return { kind: "server" };
+  return guideBlobUrl ? { kind: "client", guideSrc: audioSrc(guideBlobUrl) } : null;
 }
