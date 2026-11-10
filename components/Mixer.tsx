@@ -6,8 +6,10 @@ import { Button } from "@/components/ui";
 import type { PhraseResult, Verdict } from "@/lib/analysis/types";
 import { formatMsFine } from "@/lib/format";
 import { VERDICT_COLOR } from "@/lib/labels";
-import { channelGains, COMMENT_PREROLL_MS, needsResync, type ChannelState } from "@/lib/mix";
+import { channelGains, COMMENT_PREROLL_MS, DRIFT_RESYNC_S, type ChannelState } from "@/lib/mix";
 import { backfillPeaks } from "@/lib/mix/peaks-browser";
+import { mixSpan, mixTotalMs, trackPosition } from "@/lib/mix/sync";
+import SyncControl, { type SyncInfo } from "./SyncControl";
 import styles from "./Mixer.module.css";
 
 export interface MixChannel {
@@ -25,6 +27,10 @@ export interface MixChannel {
   role?: "mine" | "guide";
   /** 처음에 뮤트 (가이드는 내 녹음과 겹쳐 들리지 않게) */
   initiallyMuted?: boolean;
+  /** 시작 싱크 (lib/analysis/sync.ts 규약: 파일 시각 = 믹서 시각 + offsetMs). INST·가이드는 0 */
+  offsetMs?: number;
+  /** 녹음본이면 싱크 표시·조정 정보 */
+  sync?: SyncInfo;
 }
 
 export interface MixComment {
@@ -71,6 +77,14 @@ export default function Mixer({ channels, comments: initialComments, canComment,
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [peaks, setPeaks] = useState(() => new Map(channels.map((c) => [c.id, c.peaks])));
+  // 채널별 시작 싱크. 조정하면 저장 전에도 바로 재생에 반영
+  const [offsets, setOffsets] = useState<number[]>(() => channels.map((c) => c.offsetMs ?? 0));
+  const offsetsRef = useRef(offsets);
+  offsetsRef.current = offsets;
+  /** 아직 시작 전인 채널(앞이 잘린 녹음본)을 제때 틀기 위한 타이머 */
+  const startTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  /** 소리 나는 채널이 없을 때(늦게 시작하는 채널만 남았을 때) 쓰는 벽시계 */
+  const wall = useRef<{ mixMs: number; at: number }>({ mixMs: 0, at: 0 });
 
   // 피크 없는 옛 트랙: 하나씩 받아 계산하고 서버에 채워 둔다 (다음부터는 바로 보임)
   useEffect(() => {
@@ -86,8 +100,16 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     return () => { cancelled = true; };
   }, [channels]);
 
-  const totalMs = useMemo(() => Math.max(1, ...channels.map((c) => c.durationMs)), [channels]);
-  const masterIdx = useMemo(() => channels.reduce((best, c, i) => (c.durationMs > channels[best].durationMs ? i : best), 0), [channels]);
+  const totalMs = useMemo(() => mixTotalMs(channels.map((c, i) => ({ durationMs: c.durationMs, offsetMs: offsets[i] }))), [channels, offsets]);
+  // 기준 시계: 타임라인에서 가장 늦게 끝나는 채널
+  const masterIdx = useMemo(
+    () => channels.reduce((best, c, i) => (c.durationMs - offsets[i] > channels[best].durationMs - offsets[best] ? i : best), 0),
+    [channels, offsets],
+  );
+  const mineOffset = useMemo(() => {
+    const i = channels.findIndex((c) => c.role === "mine");
+    return i >= 0 ? offsets[i] : 0;
+  }, [channels, offsets]);
   const labelBySub = useMemo(() => new Map(channels.filter((c) => c.submissionId).map((c) => [c.submissionId!, c.label])), [channels]);
 
   const gains = useMemo(() => channelGains(states), [states]);
@@ -101,11 +123,54 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     });
   }, [gains]);
 
+  const clearStartTimers = useCallback(() => {
+    startTimers.current.forEach((t) => clearTimeout(t));
+    startTimers.current.clear();
+  }, []);
+
   const pauseAll = useCallback(() => {
+    clearStartTimers();
     els.current.forEach((el) => el?.pause());
     stopAtMs.current = null;
     setPlaying(false);
-  }, []);
+  }, [clearStartTimers]);
+
+  /** 믹서 시각 mixMs 에 맞춰 채널 i 를 놓는다. 시작 전이면 시작 시각에 틀도록 예약 */
+  const place = useCallback((i: number, mixMs: number, play: boolean) => {
+    const el = els.current[i];
+    if (!el) return;
+    const pos = trackPosition(mixMs, offsetsRef.current[i], channels[i].durationMs);
+    if (pos.state === "play") {
+      el.currentTime = pos.fileMs / 1000;
+      if (play) void el.play().catch(() => {});
+      return;
+    }
+    el.pause();
+    el.currentTime = pos.state === "before" ? 0 : channels[i].durationMs / 1000;
+    if (play && pos.state === "before") scheduleStart(i, -(mixMs + offsetsRef.current[i]));
+  }, [channels]);
+
+  function scheduleStart(i: number, inMs: number) {
+    if (startTimers.current.has(i)) return;
+    startTimers.current.set(i, setTimeout(() => {
+      startTimers.current.delete(i);
+      const el = els.current[i];
+      if (!el) return;
+      el.currentTime = 0;
+      void el.play().catch(() => {});
+    }, Math.max(0, inMs)));
+  }
+
+  /** 지금 믹서 시각(ms). 소리 나는 기준 채널이 있으면 그 채널, 없으면 벽시계 */
+  const nowMs = useCallback(() => {
+    const order = [masterIdx, ...channels.map((_, i) => i).filter((i) => i !== masterIdx)];
+    for (const i of order) {
+      const el = els.current[i];
+      if (!el || el.paused || el.ended) continue;
+      return el.currentTime * 1000 - offsetsRef.current[i];
+    }
+    return wall.current.mixMs + (performance.now() - wall.current.at);
+  }, [channels, masterIdx]);
 
   // 언마운트 시 정지
   useEffect(() => pauseAll, [pauseAll]);
@@ -128,37 +193,50 @@ export default function Mixer({ channels, comments: initialComments, canComment,
   useEffect(() => {
     if (!playing) return;
     const id = setInterval(() => {
-      const master = els.current[masterIdx];
-      if (!master) return;
-      const t = master.currentTime;
-      setPosMs(t * 1000);
-      if (master.ended || (stopAtMs.current != null && t * 1000 >= stopAtMs.current)) {
+      const t = nowMs();
+      wall.current = { mixMs: t, at: performance.now() };
+      setPosMs(t);
+      if (t >= totalMs || (stopAtMs.current != null && t >= stopAtMs.current)) {
         pauseAll();
         return;
       }
       els.current.forEach((el, i) => {
-        if (!el || i === masterIdx) return;
-        const durS = channels[i].durationMs / 1000;
+        if (!el) return;
+        const pos = trackPosition(t, offsets[i], channels[i].durationMs);
+        if (pos.state === "before") {
+          // 곧 시작할 채널은 시작 시각에 맞춰 예약
+          if (-(t + offsets[i]) < 2 * TICK_MS) scheduleStart(i, -(t + offsets[i]));
+          return;
+        }
+        if (pos.state === "after") return;
         // 버퍼링 중인 채널을 계속 당기면 끊김이 반복되므로 재생 가능한 상태일 때만
         if (el.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
-        if (needsResync(t, el.currentTime, durS)) el.currentTime = t;
-        if (el.paused && t < durS) void el.play().catch(() => {});
+        if (Math.abs(el.currentTime * 1000 - pos.fileMs) > DRIFT_RESYNC_S * 1000) el.currentTime = pos.fileMs / 1000;
+        if (el.paused && !startTimers.current.has(i)) void el.play().catch(() => {});
       });
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [playing, masterIdx, channels, pauseAll]);
+  }, [playing, channels, offsets, totalMs, nowMs, pauseAll]);
 
   async function playFrom(ms: number, stopAt: number | null = null) {
+    clearStartTimers();
     els.current.forEach((el) => el?.pause());
-    const t = Math.max(0, Math.min(ms, totalMs)) / 1000;
-    els.current.forEach((el, i) => {
-      if (el) el.currentTime = Math.min(t, channels[i].durationMs / 1000);
-    });
+    const t = Math.max(0, Math.min(ms, totalMs));
     stopAtMs.current = stopAt;
-    setPosMs(t * 1000);
+    wall.current = { mixMs: t, at: performance.now() };
+    setPosMs(t);
     setPlaying(true);
     const started = await Promise.allSettled(
-      els.current.map((el, i) => (el && t < channels[i].durationMs / 1000 ? el.play() : Promise.resolve())),
+      els.current.map((el, i) => {
+        if (!el) return Promise.resolve();
+        const pos = trackPosition(t, offsetsRef.current[i], channels[i].durationMs);
+        if (pos.state !== "play") {
+          place(i, t, true);
+          return pos.state === "before" ? Promise.resolve() : Promise.reject(new Error("끝남"));
+        }
+        el.currentTime = pos.fileMs / 1000;
+        return el.play();
+      }),
     );
     if (started.every((r) => r.status === "rejected")) setPlaying(false);
   }
@@ -167,18 +245,25 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     if (playing) void playFrom(ms, stopAtMs.current);
     else {
       setPosMs(ms);
-      els.current.forEach((el, i) => {
-        if (el) el.currentTime = Math.min(ms, channels[i].durationMs) / 1000;
-      });
+      channels.forEach((_, i) => place(i, ms, false));
     }
   }
 
   function toggle() {
     if (playing) {
-      const master = els.current[masterIdx];
+      const t = nowMs();
       pauseAll();
-      if (master) setPosMs(master.currentTime * 1000);
+      setPosMs(t);
     } else void playFrom(posMs >= totalMs ? 0 : posMs);
+  }
+
+  /** 싱크 조정: 재생 중이면 그 채널만 새 위치로 */
+  function changeOffset(i: number, offsetMs: number) {
+    setOffsets((o) => o.map((v, j) => (j === i ? offsetMs : v)));
+    offsetsRef.current = offsetsRef.current.map((v, j) => (j === i ? offsetMs : v));
+    const timer = startTimers.current.get(i);
+    if (timer) { clearTimeout(timer); startTimers.current.delete(i); }
+    place(i, playing ? nowMs() : posMs, playing);
   }
 
   useEffect(() => {
@@ -192,10 +277,13 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     void playFrom(Math.max(0, c.startMs - COMMENT_PREROLL_MS), c.endMs);
   }
 
+  /** 소절의 녹음본 구간(파일 시각) → 믹서 시각 */
+  const subRange = (p: PhraseResult) => ({ startMs: p.subStartMs - mineOffset, endMs: p.subEndMs - mineOffset });
+
   function selectPhrase(p: PhraseResult) {
     setPhraseIdx(p.index);
     setSelectedId(null);
-    setRange({ startMs: p.subStartMs, endMs: p.subEndMs });
+    setRange(subRange(p));
   }
 
   /** 소절 하나를 가이드 또는 내 녹음만 솔로로 재생 */
@@ -204,7 +292,8 @@ export default function Mixer({ channels, comments: initialComments, canComment,
     const target = channels.findIndex((c) => c.role === role);
     if (target < 0) return;
     setStates((s) => s.map((c, j) => ({ ...c, solo: j === target })));
-    const [start, end] = role === "guide" ? [p.guideStartMs, p.guideEndMs] : [p.subStartMs, p.subEndMs];
+    const sub = subRange(p);
+    const [start, end] = role === "guide" ? [p.guideStartMs, p.guideEndMs] : [sub.startMs, sub.endMs];
     void playFrom(Math.max(0, start - PHRASE_PAD_MS), end + PHRASE_PAD_MS);
   }
 
@@ -212,17 +301,18 @@ export default function Mixer({ channels, comments: initialComments, canComment,
   function playPhraseMix(p: PhraseResult) {
     selectPhrase(p);
     setStates((s) => s.map((c) => ({ ...c, solo: false })));
-    void playFrom(Math.max(0, p.subStartMs - COMMENT_PREROLL_MS), p.subEndMs + PHRASE_PAD_MS);
+    const sub = subRange(p);
+    void playFrom(Math.max(0, sub.startMs - COMMENT_PREROLL_MS), sub.endMs + PHRASE_PAD_MS);
   }
 
   const bandsByRole = useMemo(() => {
     if (!phrases) return null;
     const toBand = (start: number, end: number, p: PhraseResult) => ({ index: p.index, startMs: start, endMs: end, verdict: p.verdict });
     return {
-      mine: phrases.map((p) => toBand(p.subStartMs, p.subEndMs, p)),
+      mine: phrases.map((p) => toBand(p.subStartMs - mineOffset, p.subEndMs - mineOffset, p)),
       guide: phrases.map((p) => toBand(p.guideStartMs, p.guideEndMs, p)),
     };
-  }, [phrases]);
+  }, [phrases, mineOffset]);
 
   function update(i: number, patch: Partial<ChannelState>) {
     setStates((s) => s.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -279,6 +369,7 @@ export default function Mixer({ channels, comments: initialComments, canComment,
           const s = states[i];
           const own = c.submissionId ? sorted.filter((m) => m.submissionId === c.submissionId) : [];
           const silent = gains[i] === 0;
+          const span = mixSpan(offsets[i], c.durationMs);
           return (
             <div key={c.id} className={styles.channel}>
               <div className={styles.strip}>
@@ -292,10 +383,21 @@ export default function Mixer({ channels, comments: initialComments, canComment,
                     className={styles.volume} onChange={(e) => update(i, { volume: Number(e.target.value) / 100 })} />
                   <small className={`${styles.volumeValue} mono`}>{Math.round(s.volume * 100)}</small>
                 </div>
+                {c.sync && c.submissionId && (
+                  <SyncControl
+                    submissionId={c.submissionId}
+                    recordingSrc={c.url}
+                    info={c.sync}
+                    offsetMs={offsets[i]}
+                    onChange={(ms) => changeOffset(i, ms)}
+                  />
+                )}
               </div>
               <Lane
                 peaks={peaks.get(c.id) ?? null}
+                leftPct={(span.startMs / totalMs) * 100}
                 widthPct={(c.durationMs / totalMs) * 100}
+                startMs={span.startMs}
                 posPct={(posMs / totalMs) * 100}
                 range={range && { left: (range.startMs / totalMs) * 100, width: ((range.endMs - range.startMs) / totalMs) * 100 }}
                 silent={silent}
@@ -327,6 +429,7 @@ export default function Mixer({ channels, comments: initialComments, canComment,
           onPlay={playPhrase}
           onPlayMix={playPhraseMix}
           onStop={pauseAll}
+          offsetMs={mineOffset}
         />
       )}
 
@@ -374,8 +477,12 @@ export default function Mixer({ channels, comments: initialComments, canComment,
 /** 채널 한 줄: 파형 + 재생된 부분 강조 + 선택 구간 + 재생 헤드. 클릭하면 그 위치로 */
 function Lane(props: {
   peaks: number[] | null;
+  /** 파일 0초의 타임라인 위치(%). 시작 싱크만큼 밀리거나(−면 왼쪽 밖으로) 당겨진다 */
+  leftPct: number;
   /** 이 채널 길이가 전체 타임라인에서 차지하는 비율(%) */
   widthPct: number;
+  /** 파일 0초의 믹서 시각(ms) */
+  startMs: number;
   posPct: number;
   range: { left: number; width: number } | null;
   silent: boolean;
@@ -389,9 +496,9 @@ function Lane(props: {
   onSeek: (ratio: number) => void;
   children?: ReactNode;
 }) {
-  const { peaks, widthPct, posPct, range, bands } = props;
+  const { peaks, leftPct, widthPct, posPct, range, bands } = props;
   // 파형 영역 기준 재생 진행률
-  const played = Math.max(0, Math.min(100, (posPct / widthPct) * 100));
+  const played = Math.max(0, Math.min(100, ((posPct - leftPct) / widthPct) * 100));
   return (
     <div
       className={styles.lane}
@@ -419,7 +526,7 @@ function Lane(props: {
           } as CSSProperties}
         />
       ))}
-      <div className={styles.wave} style={{ width: `${widthPct}%` }}>
+      <div className={styles.wave} style={{ left: `${leftPct}%`, width: `${widthPct}%` }}>
         {peaks?.length ? (
           bands ? (
             <>
@@ -429,7 +536,7 @@ function Lane(props: {
                   key={b.index}
                   peaks={peaks}
                   className={styles.waveBand}
-                  crop={[b.startMs / props.durationMs, b.endMs / props.durationMs]}
+                  crop={[(b.startMs - props.startMs) / props.durationMs, (b.endMs - props.startMs) / props.durationMs]}
                   style={{ "--band": VERDICT_COLOR[b.verdict] } as CSSProperties}
                 />
               ))}

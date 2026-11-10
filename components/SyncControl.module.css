@@ -1,0 +1,64 @@
+.root { display: grid; gap: var(--space-1); min-width: 0; }
+
+.summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: left;
+  justify-self: start;
+}
+.summary[data-button] { cursor: pointer; border-radius: var(--radius-sm); }
+.summary[data-button]:hover { color: var(--text); }
+.key { font-weight: 600; }
+.caret { font-size: 10px; }
+
+.status, .dirty {
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  font-size: 11px;
+  line-height: 18px;
+}
+.status[data-fail] { color: var(--fixable); }
+.dirty { background: var(--accent-soft); color: var(--accent-text); }
+
+.panel { display: grid; gap: var(--space-1); padding-top: var(--space-1); }
+.row { display: flex; align-items: center; gap: 4px; }
+.row[data-wrap] { flex-wrap: wrap; }
+
+.step, .action {
+  min-height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+.step { font-family: var(--font-mono); flex: 1 1 0; min-width: 0; padding: 0 2px; }
+.action[data-primary] { background: var(--accent); color: var(--on-accent); }
+.step:hover:not(:disabled), .action:hover:not(:disabled) { border-color: var(--border-strong); }
+
+/* 전역 input 스타일(:not 여러 개라 우선순위가 높음)을 이기려고 클래스를 겹쳐 쓴다 */
+.row .input.input.input.input {
+  flex: 0 0 64px;
+  width: 64px;
+  padding: 0 4px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+  min-height: 26px;
+  padding: 0 4px;
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+.message { font-size: 11px; color: var(--text-muted); }
+.message[data-tone="error"] { color: var(--rerecord); }
+.message[data-tone="ok"] { color: var(--ok); }
+.input::-webkit-outer-spin-button, .input::-webkit-inner-spin-button { appearance: none; margin: 0; }
